@@ -27,7 +27,7 @@ export const metadata: Metadata = {
     siteName: "Jelly's Photobooth",
     images: [
       {
-        url: '/jelly-pb.png', 
+        url: '/icon.png', 
         width: 1200,
         height: 630,
         alt: "Jelly's Photobooth Preview",
