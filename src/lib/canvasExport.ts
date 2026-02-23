@@ -164,9 +164,9 @@ function drawPhoto(
 function drawStripTitle(ctx: CanvasRenderingContext2D, totalW: number, y: number, dark = false) {
   ctx.save()
   ctx.fillStyle = dark ? '#c4a882' : '#5c3d1e'
-  ctx.font = `bold ${12*S}px Georgia, serif`
+  ctx.font = `bold ${12*S}px 'Courier New', monospace`
   ctx.textAlign = 'center'
-  ctx.fillText('VINTAGE PHOTOBOOTH', totalW / 2, y)
+  ctx.fillText("Jelly's Photobooth", totalW / 2, y)
   ctx.restore()
 }
 
@@ -183,7 +183,7 @@ function drawStripBottom(
     y += 18*S
     ctx.save()
     ctx.fillStyle = dark ? '#c4a882' : '#8b6914'
-    ctx.font = `italic ${11*S}px Georgia, serif`
+    ctx.font = `italic ${11*S}px 'Courier New', monospace`
     ctx.textAlign = 'center'
     ctx.fillText(`"${caption}"`, totalW / 2, y)
     ctx.restore()
@@ -242,9 +242,9 @@ async function generateClassic(session: PhotoSession, canvas: HTMLCanvasElement,
   // Title
   ctx.save()
   ctx.fillStyle = '#f5f0e8'
-  ctx.font = `bold ${11*S}px Georgia, serif`
+  ctx.font = `bold ${9*S}px 'Courier New', monospace`
   ctx.textAlign = 'center'
-  ctx.fillText('VINTAGE PHOTOBOOTH', totalW / 2, stripPad + titleH * 0.7)
+  ctx.fillText("Jelly's Photobooth", totalW / 2, stripPad + titleH * 0.7)
   ctx.restore()
 
   // Decorative title line
@@ -352,7 +352,7 @@ async function generateFilmstrip(session: PhotoSession, canvas: HTMLCanvasElemen
     ctx.fillStyle = '#c4a882'
     ctx.font = `bold ${9*S}px 'Courier New', monospace`
     ctx.textAlign = 'center'
-    ctx.fillText('VINTAGE PHOTOBOOTH', totalW / 2, topPad + titleH * 0.65)
+    ctx.fillText("Jelly's Photobooth", totalW / 2, topPad + titleH * 0.65)
     ctx.restore()
 
     // Photos in a horizontal row
@@ -412,7 +412,7 @@ async function generateFilmstrip(session: PhotoSession, canvas: HTMLCanvasElemen
     ctx.fillStyle = '#c4a882'
     ctx.font = `bold ${9*S}px 'Courier New', monospace`
     ctx.textAlign = 'center'
-    ctx.fillText('VINTAGE PHOTOBOOTH', totalW/2, topPad + titleH * 0.65)
+    ctx.fillText("Jelly's Photobooth", totalW/2, topPad + titleH * 0.65)
     ctx.restore()
 
     const photoX = sprocketW + innerPad

@@ -789,7 +789,7 @@ export default function PhotoboothPage() {
         >
           <div className="max-w-5xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3">
             <p className="font-display text-xs tracking-widest uppercase" style={{ color: 'var(--text-muted)' }}>
-              ✦ Vintage Photobooth
+              ✦ Jelly's Photobooth
             </p>
             <p className="font-body text-xs" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>
               Developed by{' '}
