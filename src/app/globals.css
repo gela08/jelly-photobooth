@@ -1,0 +1,184 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Light mode tokens ───────────────────────────────────────────────────── */
+:root {
+  --cream: #f5f0e8;
+  --parchment: #e8dcc8;
+  --sepia: #8b6914;
+  --vintage-brown: #5c3d1e;
+  --vintage-pink: #c4a882;
+  --warm-gray: #9e8e7e;
+  --film-dark: #1a1410;
+  --aged-white: #faf6ee;
+  --surface: #faf6ee;
+  --surface-2: #f5f0e8;
+  --surface-3: #e8dcc8;
+  --text-primary: #1a1410;
+  --text-secondary: #5c3d1e;
+  --text-muted: #9e8e7e;
+  --border: rgba(92, 61, 30, 0.18);
+  --shadow-color: rgba(92, 61, 30, 0.12);
+}
+
+/* ── Dark mode tokens ────────────────────────────────────────────────────── */
+[data-theme="dark"] {
+  --cream: #1e1812;
+  --parchment: #2a211a;
+  --sepia: #c4956a;
+  --vintage-brown: #d4a878;
+  --vintage-pink: #8a6e50;
+  --warm-gray: #7a6a5a;
+  --film-dark: #0e0b08;
+  --aged-white: #241c14;
+  --surface: #241c14;
+  --surface-2: #1e1812;
+  --surface-3: #2a211a;
+  --text-primary: #f0e6d4;
+  --text-secondary: #d4a878;
+  --text-muted: #8a7a6a;
+  --border: rgba(212, 168, 120, 0.15);
+  --shadow-color: rgba(0, 0, 0, 0.4);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  background-color: var(--cream);
+  color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ── Film grain overlay ──────────────────────────────────────────────────── */
+.film-grain::before {
+  content: '';
+  position: fixed; top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none; z-index: 9999; opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat; background-size: 128px 128px;
+}
+[data-theme="dark"] .film-grain::before { opacity: 0.06; }
+
+/* ── Flash ───────────────────────────────────────────────────────────────── */
+@keyframes flash { 0% { opacity:0; } 8% { opacity:1; } 100% { opacity:0; } }
+.flash-overlay { animation: flash 0.55s ease-out forwards; }
+
+/* ── Countdown ───────────────────────────────────────────────────────────── */
+@keyframes countdownPulse {
+  0% { transform:scale(1.4); opacity:0; }
+  15% { opacity:1; }
+  70% { transform:scale(1.0); opacity:1; }
+  100% { transform:scale(0.7); opacity:0; }
+}
+.countdown-number { animation: countdownPulse 0.93s cubic-bezier(0.34,1.3,0.64,1) forwards; }
+
+/* ── Fade in up ──────────────────────────────────────────────────────────── */
+@keyframes fadeInUp { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:translateY(0); } }
+.animate-fade-in-up { animation: fadeInUp 0.5s ease-out forwards; }
+
+/* ── Fade in ─────────────────────────────────────────────────────────────── */
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+.animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+
+/* ── Scale in ────────────────────────────────────────────────────────────── */
+@keyframes scaleIn { from { opacity:0; transform:scale(0.93); } to { opacity:1; transform:scale(1); } }
+.animate-scale-in { animation: scaleIn 0.25s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+
+/* ── Slide down ──────────────────────────────────────────────────────────── */
+@keyframes slideDown { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
+.animate-slide-down { animation: slideDown 0.22s ease-out forwards; }
+
+/* ── Stagger ─────────────────────────────────────────────────────────────── */
+.stagger-children > *:nth-child(1) { animation-delay:0.05s; opacity:0; }
+.stagger-children > *:nth-child(2) { animation-delay:0.15s; opacity:0; }
+.stagger-children > *:nth-child(3) { animation-delay:0.25s; opacity:0; }
+.stagger-children > *:nth-child(4) { animation-delay:0.35s; opacity:0; }
+.stagger-children > *:nth-child(5) { animation-delay:0.45s; opacity:0; }
+.stagger-children > * { animation: fadeInUp 0.55s ease-out forwards; }
+
+/* ── Vintage border ──────────────────────────────────────────────────────── */
+.vintage-border {
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 8px var(--shadow-color), inset 0 1px 0 rgba(255,255,255,0.12);
+}
+
+/* ── Section card ────────────────────────────────────────────────────────── */
+.section-card {
+  background: var(--aged-white);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 1.25rem;
+  box-shadow: 0 2px 8px var(--shadow-color);
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: var(--parchment); }
+::-webkit-scrollbar-thumb { background: var(--vintage-pink); border-radius: 3px; }
+
+/* ── Focus ───────────────────────────────────────────────────────────────── */
+*:focus-visible { outline: 2px solid var(--sepia); outline-offset: 2px; }
+
+/* ── Toggle switch ───────────────────────────────────────────────────────── */
+.toggle-track {
+  width:40px; height:22px; border-radius:11px;
+  background: var(--warm-gray); transition: background 0.25s;
+  position:relative; cursor:pointer; flex-shrink:0;
+}
+.toggle-track.on { background: var(--vintage-brown); }
+.toggle-thumb {
+  position:absolute; top:3px; left:3px; width:16px; height:16px;
+  border-radius:50%; background:white;
+  transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.toggle-track.on .toggle-thumb { transform: translateX(18px); }
+
+/* ── Pulse ───────────────────────────────────────────────────────────────── */
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+.animate-pulse { animation: pulse 2s cubic-bezier(0.4,0,0.6,1) infinite; }
+
+/* ── Layout orientation badge ────────────────────────────────────────────── */
+.orient-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 9px;
+  padding: 2px 5px;
+  border-radius: 2px;
+  background: rgba(92,61,30,0.1);
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  font-family: 'Courier New', monospace;
+}
+
+/* ── Photobooth strip preview image sizing ───────────────────────────────── */
+.strip-preview-container img {
+  max-width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  image-rendering: crisp-edges;
+}
+
+/* ── Film strip realistic sprocket ──────────────────────────────────────── */
+.sprocket-hole {
+  border-radius: 2px;
+  background: rgba(0,0,0,0.85);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+/* ── Positioning guide ───────────────────────────────────────────────────── */
+.pose-frame {
+  border: 2px dashed var(--vintage-brown);
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--parchment);
+  opacity: 0.85;
+  transition: opacity 0.2s;
+}
+.pose-frame:hover { opacity: 1; }
