@@ -16,9 +16,9 @@ function LandscapeTag() {
       style={{ background: 'rgba(92,61,30,0.1)', color: 'var(--text-muted)', letterSpacing: '0.04em' }}
     >
       <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 2h4v5"/>
+        <rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 2h4v5" />
       </svg>
-      H
+      L
     </span>
   )
 }
@@ -32,8 +32,8 @@ function LayoutPreview({ id, poses }: { id: LayoutType; poses: number }) {
     case 'classic':
       return (
         <div className="flex flex-col" style={{ width: '22px', background: '#121010', padding: '3px', gap: '1px' }}>
-          <div style={{ height: '5px', background: 'rgba(196,168,130,0.5)', fontSize: '0', marginBottom: '2px' }} />
-          {Array.from({ length: poses }).map((_,i) => (
+          {/* <div style={{ height: '5px', background: 'rgba(196,168,130,0.5)', fontSize: '0', marginBottom: '2px' }} /> */}
+          {Array.from({ length: poses }).map((_, i) => (
             <div key={i} style={{ height: '9px', ...darkCell }} />
           ))}
           <div style={{ height: '4px', marginTop: '2px' }} />
@@ -42,30 +42,35 @@ function LayoutPreview({ id, poses }: { id: LayoutType; poses: number }) {
     // ── Classic strip (landscape) ────────────────────────────────────────
     case 'classic_land':
       return (
-        <div className="flex flex-col" style={{ width: '36px', background: '#121010', padding: '3px', gap: '1px' }}>
-          <div style={{ height: '4px', background: 'rgba(196,168,130,0.5)', marginBottom: '1px' }} />
-          {Array.from({ length: poses }).map((_,i) => (
-            <div key={i} style={{ height: '6px', ...darkCell }} />
+        <div className="flex flex-row items-center" style={{ width: '60px', height: '28px', background: '#121010', padding: '3px', gap: '1px' }}>
+          {/* Side bar (previously top bar) */}
+          {/* <div style={{ width: '4px', height: '100%', background: 'rgba(196,168,130,0.5)', marginRight: '1px' }} /> */}
+
+          {/* Dynamic Cells */}
+          {Array.from({ length: poses }).map((_, i) => (
+            <div key={i} style={{ width: '40px', height: '15px', ...darkCell }} />
           ))}
-          <div style={{ height: '3px', marginTop: '1px' }} />
+
+          {/* End spacer */}
+          {/* <div style={{ height: '5px', marginBottom: '30px' }} /> */}
         </div>
       )
     // ── Film strip (portrait) ────────────────────────────────────────────
     case 'filmstrip':
       return (
-        <div className="flex" style={{ width: '26px', height: `${poses*12+12}px`, background: '#0e0b08', borderRadius: '1px', overflow: 'hidden' }}>
+        <div className="flex" style={{ width: '26px', height: `${poses * 12 + 12}px`, background: '#0e0b08', borderRadius: '1px', overflow: 'hidden' }}>
           <div className="flex flex-col justify-around items-center" style={{ width: '5px', padding: '2px 0' }}>
-            {Array.from({ length: poses+1 }).map((_,i) => (
+            {Array.from({ length: poses + 1 }).map((_, i) => (
               <div key={i} style={{ width: '3px', height: '4px', borderRadius: '1px', background: 'rgba(0,0,0,0.8)', border: '0.5px solid rgba(255,255,255,0.12)' }} />
             ))}
           </div>
           <div className="flex-1 flex flex-col gap-px py-1">
-            {Array.from({ length: poses }).map((_,i) => (
+            {Array.from({ length: poses }).map((_, i) => (
               <div key={i} className="flex-1" style={{ background: 'rgba(196,168,130,0.45)', borderRadius: '0.5px' }} />
             ))}
           </div>
           <div className="flex flex-col justify-around items-center" style={{ width: '5px', padding: '2px 0' }}>
-            {Array.from({ length: poses+1 }).map((_,i) => (
+            {Array.from({ length: poses + 1 }).map((_, i) => (
               <div key={i} style={{ width: '3px', height: '4px', borderRadius: '1px', background: 'rgba(0,0,0,0.8)', border: '0.5px solid rgba(255,255,255,0.12)' }} />
             ))}
           </div>
@@ -76,17 +81,17 @@ function LayoutPreview({ id, poses }: { id: LayoutType; poses: number }) {
       return (
         <div className="flex flex-col" style={{ width: '44px', height: '26px', background: '#0e0b08', borderRadius: '1px', overflow: 'hidden' }}>
           <div className="flex justify-around items-center" style={{ height: '5px' }}>
-            {Array.from({ length: poses+1 }).map((_,i) => (
+            {Array.from({ length: poses + 1 }).map((_, i) => (
               <div key={i} style={{ width: '4px', height: '3px', borderRadius: '0.5px', background: 'rgba(0,0,0,0.8)', border: '0.5px solid rgba(255,255,255,0.12)' }} />
             ))}
           </div>
           <div className="flex-1 flex gap-px px-1">
-            {Array.from({ length: poses }).map((_,i) => (
+            {Array.from({ length: poses }).map((_, i) => (
               <div key={i} className="flex-1" style={{ background: 'rgba(196,168,130,0.45)', borderRadius: '0.5px' }} />
             ))}
           </div>
           <div className="flex justify-around items-center" style={{ height: '5px' }}>
-            {Array.from({ length: poses+1 }).map((_,i) => (
+            {Array.from({ length: poses + 1 }).map((_, i) => (
               <div key={i} style={{ width: '4px', height: '3px', borderRadius: '0.5px', background: 'rgba(0,0,0,0.8)', border: '0.5px solid rgba(255,255,255,0.12)' }} />
             ))}
           </div>
@@ -95,70 +100,239 @@ function LayoutPreview({ id, poses }: { id: LayoutType; poses: number }) {
     // ── Duo strip ────────────────────────────────────────────────────────
     case 'twostrip':
       return (
-        <div className="flex gap-1 h-12 w-10">
-          {[0,1].map(i => <div key={i} className="flex-1" style={cell} />)}
+        <div
+          className="flex flex-row gap-1 p-1 items-center justify-center shadow-sm"
+          style={{
+            width: '50px', // Horizontal strip width
+            height: '35px', // Taller to accommodate portrait photos
+            background: 'white',
+            border: '0.5px solid rgba(0,0,0,0.1)'
+          }}
+        >
+          {[0, 1].map(i => (
+            <div
+              key={i}
+              className="flex-1"
+              style={{
+                background: 'var(--vintage-brown)',
+                opacity: 0.4,
+                borderRadius: '0.5px',
+                // Changed to portrait ratio to match your image
+                aspectRatio: '2 / 3'
+              }}
+            />
+          ))}
         </div>
       )
     case 'twostrip_land':
       return (
-        <div className="flex flex-col gap-1 w-12 h-7">
-          {[0,1].map(i => <div key={i} className="flex-1" style={cell} />)}
+        <div
+          className="flex flex-col gap-1 p-1 shadow-sm"
+          style={{
+            width: '30px',
+            height: '60px',
+            background: 'white',
+            border: '0.5px solid rgba(0,0,0,0.1)'
+          }}
+        >
+          {[0, 1, 2].map(i => (
+            <div
+              key={i}
+              className="flex-1"
+              style={{
+                background: 'var(--vintage-brown)',
+                opacity: 0.4,
+                borderRadius: '0.5px',
+                // This ensures the photo area looks like a wide landscape
+                aspectRatio: '3 / 2'
+              }}
+            />
+          ))}
         </div>
       )
     // ── Triple strip ─────────────────────────────────────────────────────
     case 'threestrip':
       return (
-        <div className="flex gap-0.5 h-12 w-14">
-          {[0,1,2].map(i => <div key={i} className="flex-1" style={cell} />)}
+        <div
+          className="flex flex-row gap-1 p-1 items-center justify-center shadow-sm"
+          style={{
+            width: '70px', // Horizontal strip width
+            height: '35px', // Taller to accommodate portrait photos
+            background: 'white',
+            border: '0.5px solid rgba(0,0,0,0.1)'
+          }}
+        >
+          {[0, 1, 2].map(i => (
+            <div
+              key={i}
+              className="flex-1"
+              style={{
+                background: 'var(--vintage-brown)',
+                opacity: 0.4,
+                borderRadius: '0.5px',
+                // Changed to portrait ratio to match your image
+                aspectRatio: '2 / 3'
+              }}
+            />
+          ))}
         </div>
       )
+
     case 'threestrip_land':
       return (
-        <div className="flex flex-col gap-0.5 w-14 h-8">
-          {[0,1,2].map(i => <div key={i} className="flex-1" style={cell} />)}
+        <div
+          className="flex flex-col gap-1 p-1 shadow-sm"
+          style={{
+            width: '30px',
+            height: '60px',
+            background: 'white',
+            border: '0.5px solid rgba(0,0,0,0.1)'
+          }}
+        >
+          {[0, 1, 2].map(i => (
+            <div
+              key={i}
+              className="flex-1"
+              style={{
+                background: 'var(--vintage-brown)',
+                opacity: 0.4,
+                borderRadius: '0.5px',
+                // This ensures the photo area looks like a wide landscape
+                aspectRatio: '3 / 2'
+              }}
+            />
+          ))}
         </div>
       )
-    // ── Layout H ─────────────────────────────────────────────────────────
+    // ── Layout H (3 layout) ─────────────────────────────────────────────────────────
     case 'layout_h':
       return (
-        <div className="flex gap-1" style={{ width: '42px', height: '30px' }}>
-          <div className="flex-[2]" style={cell} />
-          <div className="flex-1 flex flex-col gap-1">
-            <div className="flex-1" style={cell} />
-            <div className="flex-1" style={cell} />
+        <div className="p-1" style={{ width: '52px', height: '40px', background: 'white', border: '0.5px solid rgba(0,0,0,0.1)' }}>
+          <div className="flex gap-1" style={{ width: '42px', height: '30px', }}>
+            <div className="flex-[2]" style={cell} />
+            <div className="flex-1 flex flex-col gap-1">
+              <div className="flex-1" style={cell} />
+              <div className="flex-1" style={cell} />
+            </div>
           </div>
         </div>
+
       )
-    // ── 2×2 grid ─────────────────────────────────────────────────────────
+    // ── 2×2 grid (4 Poses) ─────────────────────────────────────────────────────────
     case 'grid_4':
       return (
-        <div className="grid grid-cols-2 gap-0.5 w-10 h-10">
-          {[0,1,2,3].map(i => <div key={i} style={cell} />)}
+        <div
+          className="flex flex-col items-center justify-between p-2"
+          style={{
+            width: '80px',
+            height: '65px',
+          }}
+        >
+
+          <div className="grid grid-cols-2 gap-1 w-full flex-1">
+            {[0, 1, 2, 3].map(i => (
+              <div
+                key={i}
+                style={{
+                  background: 'white',
+                  padding: '1px',
+                  boxShadow: '0.5px 0.5px 1px rgba(0,0,0,0.1)',
+                  border: '0.1px solid rgba(0,0,0,0.05)'
+                }}
+              >
+                <div
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    aspectRatio: '1.4 / 1',
+                    background: 'var(--vintage-brown)',
+                    opacity: 0.4,
+                    borderRadius: '0.2px'
+                  }}
+                />
+              </div>
+            ))}
+          </div>
         </div>
       )
     case 'grid_4_land':
       return (
-        <div className="grid grid-cols-2 gap-0.5 w-12 h-8">
-          {[0,1,2,3].map(i => <div key={i} style={cell} />)}
+        // <div className="grid grid-cols-2 gap-0.5 w-12 h-8">
+        //   {[0, 1, 2, 3].map(i => <div key={i} style={cell} />)}
+        // </div>
+        <div
+          className="flex flex-col items-center justify-between p-0.5"
+          style={{
+            width: '60px',
+            height: '45px',
+            background: 'white',
+            boxShadow: '0.5px 0.5px 1px rgba(0,0,0,0.1)',
+            border: '0.1px solid rgba(0,0,0,0.05)'
+          }}
+        >
+
+          <div className="grid grid-cols-2 w-full flex-1">
+            {[0, 1, 2, 3].map(i => (
+              <div
+                key={i}
+                style={{
+                  padding: '1px',
+                }}
+              >
+                <div
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    aspectRatio: '1.4 / 1',
+                    background: 'var(--vintage-brown)',
+                    opacity: 0.4,
+                    borderRadius: '0.2px'
+                  }}
+                />
+              </div>
+            ))}
+          </div>
         </div>
       )
-    // ── Layout E ─────────────────────────────────────────────────────────
+    // ── Layout E (4 Poses) ─────────────────────────────────────────────────────────
     case 'layout_e':
       return (
-        <div className="flex gap-1" style={{ width: '38px', height: '42px' }}>
-          <div style={{ flex: '1.4', ...cell }} />
-          <div className="flex-1 flex flex-col gap-1">
-            {[0,1,2].map(i => <div key={i} className="flex-1" style={cell} />)}
+        <div
+          className="flex flex-col items-center justify-between p-1"
+          style={{
+            width: '50px',
+            height: '50px',
+            background: 'white',
+            boxShadow: '0.5px 0.5px 1px rgba(0,0,0,0.1)',
+            border: '0.1px solid rgba(0,0,0,0.05)'
+          }}
+        >
+          <div className="flex gap-1" style={{ width: '38px', height: '42px' }}>
+            <div style={{ flex: '1.4', ...cell }} />
+            <div className="flex-1 flex flex-col gap-1">
+              {[0, 1, 2].map(i => <div key={i} className="flex-1" style={cell} />)}
+            </div>
           </div>
         </div>
       )
     // ── Layout 9 ─────────────────────────────────────────────────────────
     case 'layout_9':
       return (
-        <div className="flex flex-col gap-1" style={{ width: '38px', height: '34px' }}>
-          <div style={{ flex: '1.4', ...cell }} />
-          <div className="flex gap-1 flex-1">
-            {[0,1,2].map(i => <div key={i} className="flex-1" style={cell} />)}
+        <div
+          className="flex flex-col items-center justify-between p-1"
+          style={{
+            width: '50px',
+            height: '40px',
+            background: 'white',
+            boxShadow: '0.5px 0.5px 1px rgba(0,0,0,0.1)',
+            border: '0.1px solid rgba(0,0,0,0.05)'
+          }}
+        >
+          <div className="flex flex-col gap-1" style={{ width: '38px', height: '34px' }}>
+            <div style={{ flex: '1.4', ...cell }} />
+            <div className="flex gap-1 flex-1">
+              {[0, 1, 2].map(i => <div key={i} className="flex-1" style={cell} />)}
+            </div>
           </div>
         </div>
       )
@@ -166,34 +340,66 @@ function LayoutPreview({ id, poses }: { id: LayoutType; poses: number }) {
     case 'layout_3':
       return (
         <div className="grid grid-cols-3 gap-0.5 w-12 h-10">
-          {Array.from({length:6}).map((_,i) => <div key={i} style={cell} />)}
+          {Array.from({ length: 6 }).map((_, i) => <div key={i} style={cell} />)}
         </div>
       )
     case 'layout_3_land':
       return (
         <div className="grid grid-cols-3 gap-0.5 w-14 h-8">
-          {Array.from({length:6}).map((_,i) => <div key={i} style={cell} />)}
+          {Array.from({ length: 6 }).map((_, i) => <div key={i} style={cell} />)}
         </div>
       )
     // ── Grid 6 (3×2) ─────────────────────────────────────────────────────
     case 'grid_6':
       return (
         <div className="grid grid-cols-2 gap-0.5 w-10" style={{ height: '42px' }}>
-          {Array.from({length:6}).map((_,i) => <div key={i} style={cell} />)}
+          {Array.from({ length: 6 }).map((_, i) => <div key={i} style={cell} />)}
         </div>
       )
     // ── Polaroids ────────────────────────────────────────────────────────
     case 'polaroid_2':
     case 'polaroid_3':
     case 'polaroid_4': {
-      const count = id === 'polaroid_2' ? 2 : id === 'polaroid_3' ? 3 : 4
-      const cols = count <= 2 ? count : count === 3 ? 3 : 2
+      const isFour = id === 'polaroid_4';
+      const count = id === 'polaroid_2' ? 2 : id === 'polaroid_3' ? 3 : 4;
+
+      // 4 polaroids use a 2x2 grid (2 columns)
+      // 2 and 3 use a single column to stack vertically like in your image
+      const cols = isFour ? 2 : 1;
+
       return (
-        <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${cols},1fr)`, width: count===3?'46px':'36px', height: count<=2?'30px':'42px' }}>
-          {Array.from({length:count}).map((_,i) => (
-            <div key={i} className="flex flex-col" style={{ background:'white', border:'1px solid var(--border)', boxShadow:'1px 1px 2px rgba(0,0,0,0.15)', transform:`rotate(${i%2===0?-2:2}deg)` }}>
-              <div className="flex-1 m-0.5" style={{ background:'var(--vintage-brown)', opacity:0.4, borderRadius:'0.5px' }} />
-              <div style={{ height:'3px' }} />
+        <div
+          className="grid gap-1 p-1 items-center justify-center"
+          style={{
+            gridTemplateColumns: `repeat(${cols}, 1fr)`,
+            // 2x2 is wider; stacked is narrower
+            width: isFour ? '70px' : '30px',
+            background: 'transparent'
+          }}
+        >
+          {Array.from({ length: count }).map((_, i) => (
+            <div
+              key={i}
+              className="flex flex-col shadow-md"
+              style={{
+                background: 'white',
+                padding: '2px',
+                paddingBottom: '6px', // The thick bottom "chin"
+                border: '0.2px solid rgba(0,0,0,0.05)',
+                transform: `rotate(${i % 2 === 0 ? -2 : 2}deg)`,
+                // Polaroid shape: slightly taller than wide
+                aspectRatio: '1 / 1.15'
+              }}
+            >
+              {/* The Photo Area */}
+              <div
+                className="flex-1"
+                style={{
+                  background: 'var(--vintage-brown)',
+                  opacity: 0.4,
+                  borderRadius: '0.5px'
+                }}
+              />
             </div>
           ))}
         </div>
@@ -204,19 +410,51 @@ function LayoutPreview({ id, poses }: { id: LayoutType; poses: number }) {
     case 'diagonal_3':
     case 'diagonal_4': {
       const count = id === 'diagonal_2' ? 2 : id === 'diagonal_3' ? 3 : 4
+
       return (
-        <div className="relative" style={{ width:'36px', height:`${count*11}px` }}>
-          {Array.from({length:count}).map((_,i) => (
-            <div key={i} style={{
-              position:'absolute', left:i%2===0?'0':'6px', top:`${i*10}px`,
-              width:'28px', height:'9px', ...cell
-            }} />
+
+        <div className="relative items-center justify-center p-1" style={{ width: '70px', height: `${count * 15}px`, left: '15px' }}>
+
+          {Array.from({ length: count }).map((_, i) => (
+            <div
+              key={i}
+              className="shadow-md"
+              style={{
+                position: 'absolute',
+                // Staggered Diagonal: each photo moves right and down
+                left: i % 2 === 0 ? '0' : '6px',
+                top: `${i * 15}px`,
+                width: '30px',
+                height: '20px',
+                aspectRatio: '3 / 2',
+                background: 'white',
+                padding: '1.5px',
+                border: '0.2px solid rgba(0,0,0,0.08)',
+                // zIndex ensures the "newest" photo is always on top
+                zIndex: i,
+                // Subtle rotation to match the "tossed" look in the previews
+                transform: `rotate(${i % 2 === 0 ? -1.5 : 1.5}deg)`
+              }}
+            >
+              {/* The Photo Area */}
+              <div
+                className="w-full h-full"
+                style={{
+                  background: 'var(--vintage-brown)',
+                  opacity: 0.4,
+                  borderRadius: '0.2px'
+                }}
+              />
+            </div>
           ))}
+
         </div>
+
       )
     }
+
     default:
-      return <div style={{ width:'32px', height:'32px', background:'var(--border)', borderRadius:'2px' }} />
+      return <div style={{ width: '32px', height: '32px', background: 'var(--border)', borderRadius: '2px' }} />
   }
 }
 
@@ -232,18 +470,21 @@ export default function LayoutSelector({ selected, poseCount, onSelect }: Layout
         {available.map((layout) => {
           const isSelected = selected === layout.id
           return (
+
             <button
               key={layout.id}
               onClick={() => onSelect(layout.id)}
-              className="flex flex-col items-center gap-2 p-3 rounded-sm transition-all duration-200"
+              className="flex flex-col items-center gap-5 p-5 rounded-sm transition-all duration-200"
               style={{
                 border: `1px solid ${isSelected ? 'var(--vintage-brown)' : 'var(--border)'}`,
                 background: isSelected ? 'rgba(92,61,30,0.05)' : 'var(--surface)',
               }}
             >
+
               <div className="h-14 flex items-center justify-center">
                 <LayoutPreview id={layout.id} poses={poseCount} />
               </div>
+
               <div className="flex flex-col items-center gap-1">
                 <span
                   className="font-display text-xs tracking-wide leading-tight text-center"
@@ -253,6 +494,7 @@ export default function LayoutSelector({ selected, poseCount, onSelect }: Layout
                 </span>
                 {layout.orientation === 'landscape' && <LandscapeTag />}
               </div>
+
             </button>
           )
         })}

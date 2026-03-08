@@ -556,28 +556,53 @@ async function generateLayoutH(session: PhotoSession, canvas: HTMLCanvasElement)
 }
 
 // ── 2×2 GRID ──────────────────────────────────────────────────────────────────
+// Portrait: Square-ish 2x2 grid
+// Landscape (H): Wider, cinematic 2x2 grid
 
+// ── 2×2 GRID ──────────────────────────────────────────────────────────────────
 async function generateGrid4(session: PhotoSession, canvas: HTMLCanvasElement, landscape = false) {
   const imgs = await Promise.all(session.photos.slice(0, 4).map(loadImage))
-  const pad = 24*S, gap = 10*S, bw = 5*S
+  
+  // Logic: Set gap to 0 if landscape, otherwise use 12*S for portrait
+  const pad = 24*S     // Outer padding/margin
+  const bw = landscape ? 0 : 5*S      // Width of the white frame around photos
+  const gap = landscape ? 0 : 12*S    // Horizontal/Vertical space between photos
+  
   const titleH = 28*S
-  const photoW = landscape ? 230*S : 220*S
-  const photoH = landscape ? 175*S : 165*S
   const captionH = (session.caption ? 36*S : 0) + (session.showDate ? 26*S : 0)
+
+  const photoW = landscape ? 280*S : 220*S 
+  const photoH = landscape ? 190*S : 165*S 
+
+  // Total canvas math
   const totalW = pad*2 + photoW*2 + bw*4 + gap
   const totalH = pad + titleH + photoH*2 + bw*4 + gap + captionH + pad
 
-  canvas.width = totalW; canvas.height = totalH
+  canvas.width = totalW
+  canvas.height = totalH
   const ctx = canvas.getContext('2d')!
+
   drawVintagePaper(ctx, totalW, totalH)
   drawStripTitle(ctx, totalW, pad + titleH*0.7)
+
   imgs.forEach((img, i) => {
-    const col = i % 2, row = Math.floor(i / 2)
-    const x = pad + bw + col*(photoW + bw*2 + gap)
-    const y = pad + titleH + bw + row*(photoH + bw*2 + gap)
+    const col = i % 2
+    const row = Math.floor(i / 2)
+    
+    // When gap is 0, photos will touch each other
+    const x = pad + bw + col * (photoW + bw*2 + gap)
+    const y = pad + titleH + bw + row * (photoH + bw*2 + gap)
+    
     drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw)
   })
-  drawStripBottom(ctx, session.caption, session.showDate, totalW, pad+titleH+photoH*2+bw*4+gap)
+
+  drawStripBottom(
+    ctx, 
+    session.caption, 
+    session.showDate, 
+    totalW, 
+    pad + titleH + photoH*2 + bw*4 + gap
+  )
 }
 
 // ── LAYOUT E — 1 large left + 3 stacked right ─────────────────────────────────
@@ -587,8 +612,8 @@ async function generateLayoutE(session: PhotoSession, canvas: HTMLCanvasElement)
   const pad = 24*S, gap = 8*S, bw = 5*S
   const titleH = 28*S
   const captionH = (session.caption ? 36*S : 0) + (session.showDate ? 26*S : 0)
-  const bigH = 310*S, bigW = 230*S
-  const smallW = 150*S, smallH = (bigH - gap*2) / 3
+  const bigH = 310*S, bigW = 330*S
+  const smallW = 150*S, smallH = (bigH - gap*4.5) / 3
   const totalW = pad + bigW + bw*2 + gap + smallW + bw*2 + pad
   const totalH = pad + titleH + bigH + bw*2 + captionH + pad
 
@@ -612,7 +637,7 @@ async function generateLayout9(session: PhotoSession, canvas: HTMLCanvasElement)
   const pad = 24*S, gap = 10*S, bw = 5*S
   const titleH = 28*S
   const captionH = (session.caption ? 36*S : 0) + (session.showDate ? 26*S : 0)
-  const bigW = 280*S, bigH = 210*S
+  const bigW = 480*S, bigH = 320*S
   const smallH = 130*S
   const totalW = pad + bigW + bw*2 + pad
   const smallW = (totalW - pad*2 - bw*6 - gap*2) / 3
@@ -866,24 +891,50 @@ export async function generatePhotoboothCanvas(session: PhotoSession, layoutOver
 
 export async function downloadPhoto(session: PhotoSession, format: 'print' | 'social' = 'print') {
   const canvas = await generatePhotoboothCanvas(session)
-  const ts = Date.now()
+  
+  // Format the date as YYYY-MM-DD
+  const dateStr = new Date().toISOString().split('T')[0]
+  
+  // Use the layout ID from the session (e.g., 'grid_4', 'triple_strip')
+  const layoutName = session.layout || 'strip'
+  
+  // Construct the clean filename
+  const fileName = `jellybooth_${dateStr}(for_${format}).png`
 
   if (format === 'social') {
     const socialW = 1080, socialH = 1350
     const social = document.createElement('canvas')
     social.width = socialW; social.height = socialH
+    
     const ctx = social.getContext('2d')!
-    ctx.fillStyle = '#f5f0e8'; ctx.fillRect(0, 0, socialW, socialH)
+    
+    // Background and Vignette
+    ctx.fillStyle = '#f5f0e8'; 
+    ctx.fillRect(0, 0, socialW, socialH)
+    
     const vg = ctx.createRadialGradient(socialW/2, socialH/2, 0, socialW/2, socialH/2, socialW*0.8)
-    vg.addColorStop(0, 'rgba(245,240,232,0)'); vg.addColorStop(1, 'rgba(130,90,30,0.12)')
-    ctx.fillStyle = vg; ctx.fillRect(0, 0, socialW, socialH)
+    vg.addColorStop(0, 'rgba(245,240,232,0)'); 
+    vg.addColorStop(1, 'rgba(130,90,30,0.12)')
+    ctx.fillStyle = vg; 
+    ctx.fillRect(0, 0, socialW, socialH)
+    
+    // Scaling the strip to fit 1080x1350
     const scale = Math.min((socialW - 80) / canvas.width, (socialH - 100) / canvas.height)
-    const sw = Math.round(canvas.width * scale), sh = Math.round(canvas.height * scale)
+    const sw = Math.round(canvas.width * scale)
+    const sh = Math.round(canvas.height * scale)
+    
     ctx.drawImage(canvas, Math.round((socialW - sw) / 2), Math.round((socialH - sh) / 2), sw, sh)
+    
+    // Trigger download
     const a = document.createElement('a')
-    a.download = `vintage-photobooth-social-${ts}.png`; a.href = social.toDataURL('image/png'); a.click()
+    a.download = fileName
+    a.href = social.toDataURL('image/png')
+    a.click()
   } else {
+    // Standard Print download
     const a = document.createElement('a')
-    a.download = `vintage-photobooth-${ts}.png`; a.href = canvas.toDataURL('image/png'); a.click()
+    a.download = fileName
+    a.href = canvas.toDataURL('image/png')
+    a.click()
   }
 }

@@ -2,11 +2,13 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react'
 import { FilterType, FILTERS, CountdownSeconds } from '@/lib/types'
+import FilterSelector from '@/components/FilterSelector'
 
 interface CameraBoothProps {
   filter: FilterType
   poseCount: number
   countdownSeconds: CountdownSeconds
+  onFilterChange: (f: FilterType) => void
   onPhotosCapture: (photos: string[]) => void
   onCancel: () => void
 }
@@ -218,7 +220,7 @@ function PhotoLightbox({ photo, index, total, onClose }: {
 }
 
 // ── Main component ─────────────────────────────────────────────────────────
-export default function CameraBooth({ filter, poseCount, countdownSeconds, onPhotosCapture, onCancel }: CameraBoothProps) {
+export default function CameraBooth({ filter, poseCount, countdownSeconds, onFilterChange, onPhotosCapture, onCancel }: CameraBoothProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -501,6 +503,14 @@ export default function CameraBooth({ filter, poseCount, countdownSeconds, onPho
         {/* Controls */}
         {phase === 'ready' && (
           <>
+            {/* Filter selector — only available before starting */}
+            <div className="section-card">
+              <FilterSelector
+                selected={filter}
+                onSelect={onFilterChange}
+              />
+            </div>
+
             <div className="flex gap-3">
               <button onClick={onCancel}
                 className="flex items-center gap-2 font-display text-xs tracking-widest uppercase py-3 px-4 transition-all flex-shrink-0 active:scale-95"

@@ -527,21 +527,19 @@ function SessionSummary({
 // ── Setup Step ─────────────────────────────────────────────────────────────────
 function SetupStep({
   poseCount,
-  filter,
   layout,
   countdown,
+  filter,
   onPoseChange,
-  onFilterChange,
   onLayoutChange,
   onCountdownChange,
   onStart,
 }: {
   poseCount: PoseCount
-  filter: FilterType
   layout: LayoutType
   countdown: CountdownSeconds
+  filter: FilterType
   onPoseChange: (p: PoseCount) => void
-  onFilterChange: (f: FilterType) => void
   onLayoutChange: (l: LayoutType) => void
   onCountdownChange: (c: CountdownSeconds) => void
   onStart: () => void
@@ -556,7 +554,7 @@ function SetupStep({
           Set Up Your Session
         </h2>
         <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>
-          Choose your poses, filter, layout, and countdown
+          Choose your poses, layout, and countdown
         </p>
       </div>
 
@@ -612,14 +610,6 @@ function SetupStep({
             </button>
           ))}
         </div>
-      </div>
-
-      {/* Filter preview */}
-      <div className="section-card">
-        <FilterSelector
-          selected={filter}
-          onSelect={onFilterChange}
-        />
       </div>
 
       {/* Layout selector */}
@@ -713,7 +703,6 @@ export default function PhotoboothPage() {
               layout={layout}
               countdown={countdown}
               onPoseChange={handlePoseChange}
-              onFilterChange={setFilter}
               onLayoutChange={setLayout}
               onCountdownChange={setCountdown}
               onStart={() => setShowPrivacy(true)}
@@ -726,6 +715,7 @@ export default function PhotoboothPage() {
                 filter={filter}
                 poseCount={poseCount}
                 countdownSeconds={countdown}
+                onFilterChange={setFilter}
                 onPhotosCapture={handlePhotosCapture}
                 onCancel={() => setStep('setup')}
               />
