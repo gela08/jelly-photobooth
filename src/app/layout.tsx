@@ -1,6 +1,9 @@
 import type { Metadata } from 'next'
 import { Playfair_Display, Crimson_Text } from 'next/font/google'
 import { ThemeProvider } from '@/lib/theme'
+// Ignore TS error for side-effect CSS import in Next.js app directory
+// @ts-ignore: Importing global CSS for Next.js layout
+import './globals.css'
 
 const siteUrl = 'https://jelly-photobooth.vercel.app/'
 
