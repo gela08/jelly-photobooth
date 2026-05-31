@@ -1,7 +1,8 @@
 import type { Metadata } from 'next'
 import { Playfair_Display, Crimson_Text } from 'next/font/google'
 import { ThemeProvider } from '@/lib/theme'
-import './globals.css'
+
+const siteUrl = 'https://jelly-photobooth.vercel.app/'
 
 const playfair = Playfair_Display({
   subsets: ['latin'],
@@ -17,13 +18,38 @@ const crimson = Crimson_Text({
 })
 
 export const metadata: Metadata = {
-  title: "Jelly's Photobooth — Capture Memories in Film",
+  title: {
+    default: "Jelly's Photobooth | Vintage-style photobooth by Angela Gardan",
+    template: "%s | Angela Gardan",
+  },
+
   description: 'A beautiful vintage-style photobooth that runs entirely in your browser. No uploads, no accounts, just timeless photos.',
-  keywords: ['photobooth', 'vintage', 'photo', 'camera', 'film'],
+
+  keywords: [
+    "Jelly Photobooth",
+    "Angela Gardan", 
+    "Jelly's Photobooth", 
+    "Jelly Vintage Photobooth", 
+    "Photobooth App", 
+    "Photobooth Website", 
+    "Free Photobooth", 
+    "Online Free Photobooth",
+    "Online Photobooth", 
+    "Vintage Photobooth",
+    "Film Photobooth", 
+    "Jelly",
+    "jelly app",
+    "jelly photobooth app",
+    "jelly photobooth website",
+    "jelly vintage photobooth",
+    "jelly film photobooth",
+  ],
+
   openGraph: {
+    type: "website",
+    url: siteUrl,
     title: "Jelly's Photobooth",
-    description: 'Capture memories in film — right in your browser.',
-    type: 'website',
+    description: 'Developed by Angela Gardan. Capture memories in film — right in your browser.',
     siteName: "Jelly's Photobooth",
     images: [
       {
