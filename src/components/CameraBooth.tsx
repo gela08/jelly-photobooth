@@ -19,58 +19,6 @@ function getCssFilter(filterId: FilterType): string {
   return FILTERS.find((f) => f.id === filterId)?.cssFilter ?? 'none'
 }
 
-function applyPixelFilter(ctx: CanvasRenderingContext2D, filter: FilterType, x: number, y: number, w: number, h: number) {
-  if (filter === 'none') return
-  try {
-    const imageData = ctx.getImageData(Math.round(x), Math.round(y), Math.round(w), Math.round(h))
-    const d = imageData.data
-    for (let i = 0; i < d.length; i += 4) {
-      const r = d[i], g = d[i + 1], b = d[i + 2]
-      switch (filter) {
-        case 'sepia':
-          d[i] = Math.min(255, (r * 0.393 + g * 0.769 + b * 0.189) * 1.05)
-          d[i + 1] = Math.min(255, (r * 0.349 + g * 0.686 + b * 0.168) * 1.05)
-          d[i + 2] = Math.min(255, (r * 0.272 + g * 0.534 + b * 0.131) * 1.05)
-          break
-        case 'bw': case 'noir': {
-          const lum = r * 0.299 + g * 0.587 + b * 0.114
-          const c = filter === 'noir' ? (lum - 128) * 1.4 + 128 : (lum - 128) * 1.15 + 128
-          d[i] = d[i + 1] = d[i + 2] = Math.min(255, Math.max(0, c)); break
-        }
-        case 'warm':
-          d[i] = Math.min(255, r * 1.1 + 12); d[i + 1] = Math.min(255, g * 0.94); d[i + 2] = Math.min(255, b * 0.82); break
-        case 'grain': {
-          const n = (Math.random() - 0.5) * 22
-          d[i] = Math.min(255, Math.max(0, r * 1.03 + n)); d[i + 1] = Math.min(255, Math.max(0, g * 0.97 + n)); d[i + 2] = Math.min(255, Math.max(0, b * 0.91 + n)); break
-        }
-        case 'faded':
-          d[i] = Math.min(255, r * 0.85 + 30); d[i + 1] = Math.min(255, g * 0.85 + 28); d[i + 2] = Math.min(255, b * 0.85 + 25); break
-        case 'cool':
-          d[i] = Math.min(255, r * 0.85); d[i + 1] = Math.min(255, g * 0.95); d[i + 2] = Math.min(255, b * 1.2); break
-        case 'golden':
-          d[i] = Math.min(255, r * 1.15 + 15); d[i + 1] = Math.min(255, g * 1.02 + 5); d[i + 2] = Math.min(255, b * 0.72); break
-        case 'dreamy':
-          d[i] = Math.min(255, r * 1.05 + 15); d[i + 1] = Math.min(255, g * 1.0 + 10); d[i + 2] = Math.min(255, b * 1.1 + 15); break
-        case 'lomo': {
-          const sat = Math.max(r, g, b) - Math.min(r, g, b)
-          d[i] = Math.min(255, r + sat * 0.3); d[i + 1] = Math.min(255, g * 0.9); d[i + 2] = Math.min(255, b * 0.9); break
-        }
-        case 'vintage90s':
-          d[i] = Math.min(255, r * 1.08 + 8); d[i + 1] = Math.min(255, g * 1.02 + 5); d[i + 2] = Math.min(255, b * 0.88); break
-        case 'y2k':
-          d[i] = Math.min(255, r * 1.1 + 10); d[i + 1] = Math.min(255, g * 1.05); d[i + 2] = Math.min(255, b * 1.15 + 8); break
-        case 'sunburn':
-          d[i] = Math.min(255, r * 1.2 + 20); d[i + 1] = Math.min(255, g * 1.0 + 5); d[i + 2] = Math.min(255, b * 0.75); break
-        case 'matte':
-          d[i] = Math.min(255, r * 0.9 + 20); d[i + 1] = Math.min(255, g * 0.9 + 20); d[i + 2] = Math.min(255, b * 0.9 + 20); break
-        case 'pinky':
-          d[i] = Math.min(255, r * 1.1 + 15); d[i + 1] = Math.min(255, g * 0.9 + 5); d[i + 2] = Math.min(255, b * 1.05 + 10); break
-      }
-    }
-    ctx.putImageData(imageData, Math.round(x), Math.round(y))
-  } catch { /* ignore */ }
-}
-
 // ── Icons ──────────────────────────────────────────────────────────────────
 function CameraIcon({ size = 18 }: { size?: number }) {
   return (
@@ -172,8 +120,8 @@ function RetakeModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel:
 }
 
 // ── Photo lightbox ─────────────────────────────────────────────────────────
-function PhotoLightbox({ photo, index, total, onClose }: {
-  photo: string; index: number; total: number; onClose: () => void
+function PhotoLightbox({ photo, index, total, cssFilter, onClose }: {
+  photo: string; index: number; total: number; cssFilter: string; onClose: () => void
 }) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -198,6 +146,7 @@ function PhotoLightbox({ photo, index, total, onClose }: {
             objectFit: 'contain',
             border: '5px solid white',
             boxShadow: '0 24px 80px rgba(0,0,0,0.7)',
+            filter: cssFilter,
           }}
         />
         <div
@@ -234,6 +183,7 @@ export default function CameraBooth({ filter, poseCount, countdownSeconds, onFil
   const [isFlashing, setIsFlashing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [cameraReady, setCameraReady] = useState(false)
+  const [isPortraitCamera, setIsPortraitCamera] = useState(false)
   const [grainTick, setGrainTick] = useState(0)
   const [showRetakeModal, setShowRetakeModal] = useState(false)
   const [lightboxPhoto, setLightboxPhoto] = useState<{ photo: string; index: number } | null>(null)
@@ -249,16 +199,29 @@ export default function CameraBooth({ filter, poseCount, countdownSeconds, onFil
     setError(null); setCameraReady(false)
     try {
       streamRef.current?.getTracks().forEach((t) => t.stop())
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 960 }, facingMode: 'user' },
-        audio: false,
-      })
+      let stream: MediaStream
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 960 }, facingMode: 'user' },
+          audio: false,
+        })
+      } catch {
+        // Fallback for mobile devices that reject explicit ideal dimensions
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user' },
+          audio: false,
+        })
+      }
       if (!isMountedRef.current) { stream.getTracks().forEach((t) => t.stop()); return }
       streamRef.current = stream
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         videoRef.current.onloadedmetadata = () => {
-          videoRef.current?.play()
+          const v = videoRef.current
+          if (v && v.videoWidth > 0 && v.videoHeight > 0 && isMountedRef.current) {
+            setIsPortraitCamera(v.videoHeight > v.videoWidth)
+          }
+          v?.play()
             .then(() => { if (isMountedRef.current) setCameraReady(true) })
             .catch(() => { if (isMountedRef.current) setCameraReady(true) })
         }
@@ -287,17 +250,17 @@ export default function CameraBooth({ filter, poseCount, countdownSeconds, onFil
     }
   }, [startCamera])
 
+  // Capture clean mirrored frame (filters are applied non-destructively in preview/export)
   const captureFrame = useCallback((): string | null => {
     const video = videoRef.current, canvas = canvasRef.current
     if (!video || !canvas || video.videoWidth === 0) return null
     const w = video.videoWidth, h = video.videoHeight
     canvas.width = w; canvas.height = h
-    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    const ctx = canvas.getContext('2d')
     if (!ctx) return null
     ctx.save(); ctx.scale(-1, 1); ctx.drawImage(video, -w, 0, w, h); ctx.restore()
-    if (filter !== 'none') applyPixelFilter(ctx, filter, 0, 0, w, h)
     return canvas.toDataURL('image/png')
-  }, [filter])
+  }, [])
 
   const startSession = useCallback(async () => {
     if (isRunningRef.current || !cameraReady) return
@@ -358,22 +321,17 @@ export default function CameraBooth({ filter, poseCount, countdownSeconds, onFil
           photo={lightboxPhoto.photo}
           index={lightboxPhoto.index}
           total={capturedPhotos.length}
+          cssFilter={getCssFilter(filter)}
           onClose={() => setLightboxPhoto(null)}
         />
       )}
 
-      <div className="flex flex-col gap-4 w-full max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="flex flex-col gap-3 sm:gap-4 w-full max-w-[1200px] mx-auto px-0 sm:px-6 lg:px-8">
         {/* Viewfinder */}
         <div
-          className=" relative w-full max-w-full overflow-hidden rounded-sm transition-all duration-300
-
-      /* Responsive aspect ratio: taller on mobile, wider on desktop */
-      aspect-[4/3] sm:aspect-[16/9] lg:aspect-[5/3]
-      
-      /* Gentle breakout on medium screens, full expansion on large screens */
-      md:w-[115%] md:max-w-none md:-ml-[7.5%]
-      lg:w-[130%] lg:-ml-[15%]
-      viewfinder-fullscreen-expand"
+          className={`relative w-full max-w-full overflow-hidden rounded-sm transition-all duration-300 ${
+            isPortraitCamera ? 'aspect-[3/4] max-h-[60dvh]' : 'aspect-[4/3] max-h-[58dvh]'
+          } sm:max-h-none sm:aspect-[16/9] lg:aspect-[5/3] md:w-[115%] md:max-w-none md:-ml-[7.5%] lg:w-[130%] lg:-ml-[15%] viewfinder-fullscreen-expand`}
           style={{ background: 'var(--film-dark)' }}
         >
           <video
@@ -422,14 +380,14 @@ export default function CameraBooth({ filter, poseCount, countdownSeconds, onFil
 
           {/* Shot counter */}
           {cameraReady && phase === 'running' && (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1 text-xs font-mono tracking-widest rounded-full" style={{ background: 'rgba(26,20,16,0.8)', color: 'var(--cream)' }}>
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1 text-[11px] sm:text-xs font-mono tracking-widest rounded-full whitespace-nowrap" style={{ background: 'rgba(26,20,16,0.8)', color: 'var(--cream)' }}>
               Shot {Math.min(currentShot + 1, poseCount)} / {poseCount}
             </div>
           )}
 
           {/* Ready hint */}
           {cameraReady && phase === 'ready' && (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full text-xs font-display tracking-widest uppercase" style={{ background: 'rgba(26,20,16,0.7)', color: 'rgba(245,240,232,0.9)' }}>
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 max-w-[92%] px-3 py-1.5 sm:px-4 sm:py-2 rounded-full text-[10px] sm:text-xs font-display tracking-widest uppercase whitespace-nowrap truncate" style={{ background: 'rgba(26,20,16,0.72)', color: 'rgba(245,240,232,0.92)' }}>
               Ready · {poseCount} shots · {countdownSeconds}s countdown
             </div>
           )}
@@ -448,7 +406,7 @@ export default function CameraBooth({ filter, poseCount, countdownSeconds, onFil
           {isFlashing && <div className="absolute inset-0 bg-white flash-overlay pointer-events-none" />}
 
           {phase === 'ready' && (
-            <div className="absolute bottom-3 left-3 right-3 z-10">
+            <div className="absolute bottom-2 sm:bottom-3 left-2 sm:left-3 right-2 sm:right-3 z-10">
               <FilterSelector
                 selected={filter}
                 onSelect={onFilterChange}
@@ -477,27 +435,27 @@ export default function CameraBooth({ filter, poseCount, countdownSeconds, onFil
 
         <canvas ref={canvasRef} className="hidden" aria-hidden="true" />
 
-        {/* Thumbnail strip */}
-        <div className="flex items-stretch gap-2 w-[130%] -ml-[15%]">
+        {/* Thumbnail strip & controls (responsive: stacked cleanly on mobile, single row on sm+) */}
+        <div className="flex flex-col sm:flex-row sm:items-stretch gap-2.5 sm:gap-2 w-full md:w-[115%] md:-ml-[7.5%] lg:w-[130%] lg:-ml-[15%]">
           {phase === 'ready' && (
             <button onClick={onCancel}
-              className="flex items-center justify-center gap-2 font-display text-xs tracking-widest uppercase py-3 px-4 w-30 flex-shrink-0 transition-all active:scale-95"
+              className="hidden sm:flex items-center justify-center gap-2 font-display text-xs tracking-widest uppercase py-3 px-4 flex-shrink-0 transition-all active:scale-95"
               style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface)' }}>
               <ArrowLeftIcon />
-              <span className="hidden sm:inline">Back</span>
+              <span>Back</span>
             </button>
           )}
 
           {phase === 'confirm' && (
             <button onClick={() => setShowRetakeModal(true)} aria-label="Retake photos"
-              className="flex items-center justify-center gap-2 font-display text-xs tracking-widest uppercase py-3 px-4 w-30 flex-shrink-0 transition-all active:scale-95"
+              className="hidden sm:flex items-center justify-center gap-2 font-display text-xs tracking-widest uppercase py-3 px-4 flex-shrink-0 transition-all active:scale-95"
               style={{ border: '1px solid var(--border)', color: 'var(--vintage-brown)', background: 'var(--surface)' }}>
               <span className="flex-shrink-0"><RefreshIcon /></span>
-              <span className="hidden sm:inline">Retake</span>
+              <span>Retake</span>
             </button>
           )}
 
-          <div className="flex flex-1 min-w-0 gap-3 overflow-x-auto pb-5">
+          <div className="flex flex-1 min-w-0 justify-center sm:justify-start gap-2 sm:gap-3 overflow-x-auto pb-1 sm:pb-5">
             {Array.from({ length: poseCount }).map((_, i) => {
               const photo = capturedPhotos[i]
               const isActive = i === currentShot && phase === 'running'
@@ -506,7 +464,7 @@ export default function CameraBooth({ filter, poseCount, countdownSeconds, onFil
                 <div key={i}
                   className={`flex-shrink-0 rounded-sm overflow-hidden transition-all duration-300 ${isClickable ? 'cursor-pointer' : ''}`}
                   style={{
-                    width: `${Math.min(90, 390 / poseCount)}px`,
+                    width: `${Math.min(82, Math.max(48, 320 / poseCount))}px`,
                     aspectRatio: '4/3',
                     border: photo
                       ? `2px solid var(--vintage-brown)`
@@ -520,7 +478,12 @@ export default function CameraBooth({ filter, poseCount, countdownSeconds, onFil
                 >
                   {photo ? (
                     <>
-                      <img src={photo} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                      <img
+                        src={photo}
+                        alt={`Photo ${i + 1}`}
+                        className="w-full h-full object-cover"
+                        style={{ filter: getCssFilter(filter) }}
+                      />
                       {isClickable && (
                         <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-150"
                           style={{ background: 'rgba(26,20,16,0.5)' }}>
@@ -541,26 +504,40 @@ export default function CameraBooth({ filter, poseCount, countdownSeconds, onFil
           </div>
 
           {phase === 'ready' && (
-            <div className="w-[36%] flex-shrink-0">
-              <button onClick={startSession} disabled={!cameraReady}
-                className="w-full flex items-center justify-center gap-2.5 font-display text-sm tracking-widest uppercase py-4 px-4 transition-all duration-200 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{ background: 'var(--vintage-brown)', color: 'var(--cream)' }}>
-                <CameraIcon />
-                <span className="hidden sm:inline">Start Photobooth</span>
-              </button>
-              <p className="text-center text-[10px] leading-tight font-body mt-1" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>
+            <div className="w-full sm:w-[36%] flex-shrink-0">
+              <div className="flex gap-2">
+                <button onClick={onCancel}
+                  className="sm:hidden flex items-center justify-center gap-1.5 font-display text-xs tracking-widest uppercase py-3.5 px-4 flex-shrink-0 transition-all active:scale-95 rounded-sm"
+                  style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface)' }}>
+                  <ArrowLeftIcon />
+                  <span>Back</span>
+                </button>
+                <button onClick={startSession} disabled={!cameraReady}
+                  className="flex-1 flex items-center justify-center gap-2 font-display text-xs sm:text-sm tracking-widest uppercase py-3.5 sm:py-4 px-4 transition-all duration-200 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed rounded-sm"
+                  style={{ background: 'var(--vintage-brown)', color: 'var(--cream)' }}>
+                  <CameraIcon />
+                  <span>Start Photobooth</span>
+                </button>
+              </div>
+              <p className="text-center text-[10px] leading-tight font-body mt-1.5" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>
                 {poseCount} photos · {countdownSeconds}s countdown each · fully automatic
               </p>
             </div>
           )}
 
           {phase === 'confirm' && (
-            <div className="self-center w-[30%] flex-shrink-0">
+            <div className="w-full sm:w-[30%] sm:self-center flex-shrink-0 flex gap-2">
+              <button onClick={() => setShowRetakeModal(true)} aria-label="Retake photos"
+                className="sm:hidden flex items-center justify-center gap-1.5 font-display text-xs tracking-widest uppercase py-3.5 px-4 flex-shrink-0 transition-all active:scale-95 rounded-sm"
+                style={{ border: '1px solid var(--border)', color: 'var(--vintage-brown)', background: 'var(--surface)' }}>
+                <RefreshIcon />
+                <span>Retake</span>
+              </button>
               <button onClick={handleConfirm} aria-label="Looks great, continue"
-                  className="w-full flex items-center justify-center gap-2.5 font-display text-sm tracking-widest uppercase py-4 px-4 transition-all duration-200 active:scale-95"
+                  className="flex-1 flex items-center justify-center gap-2 font-display text-xs sm:text-sm tracking-widest uppercase py-3.5 sm:py-4 px-4 transition-all duration-200 active:scale-95 rounded-sm"
                 style={{ background: 'var(--vintage-brown)', color: 'var(--cream)' }}>
                 <CheckIcon />
-                <span className="hidden sm:inline">Looks Great!</span>
+                <span>Looks Great!</span>
               </button>
             </div>
           )}

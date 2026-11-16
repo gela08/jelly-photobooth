@@ -5,6 +5,7 @@
 /* ── Light mode tokens ───────────────────────────────────────────────────── */
 :root {
   --cream: #f5f0e8;
+  --cream-rgb: 245, 240, 232;
   --parchment: #e8dcc8;
   --sepia: #8b6914;
   --vintage-brown: #5c3d1e;
@@ -25,6 +26,7 @@
 /* ── Dark mode tokens ────────────────────────────────────────────────────── */
 [data-theme="dark"] {
   --cream: #1e1812;
+  --cream-rgb: 30, 24, 18;
   --parchment: #2a211a;
   --sepia: #c4956a;
   --vintage-brown: #d4a878;

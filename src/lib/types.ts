@@ -38,15 +38,85 @@ export type LayoutType =
   | 'layout_3_land'    // Layout 3 landscape
   | 'grid_6'           // 3×2 grid (kept for compat)
 
+// ── Photo Framing Transform ───────────────────────────────────────────────
+
+export interface PhotoTransform {
+  /** Normalized pan offset X in [-1, 1] (0 = centered) */
+  x: number
+  /** Normalized pan offset Y in [-1, 1] (0 = centered) */
+  y: number
+  /** Zoom factor >= 1 (1 = cover fit) */
+  zoom: number
+}
+
+export const DEFAULT_PHOTO_TRANSFORM: PhotoTransform = { x: 0, y: 0, zoom: 1 }
+
+// ── Stickers ──────────────────────────────────────────────────────────────
+
+export type StickerCategory =
+  | 'cute'
+  | 'sparkles'
+  | 'vintage'
+  | 'y2k'
+  | 'words'
+  | 'custom'
+
+export interface StickerAsset {
+  id: string
+  label: string
+  category: StickerCategory
+  /** SVG data URL, uploaded image data URL, or /stickers/... public path */
+  src: string
+  isCustom?: boolean
+  isPublicFile?: boolean
+}
+
+export interface PlacedSticker {
+  uid: string
+  assetId: string
+  label: string
+  src: string
+  /** Normalized center X position [0..1] on the strip */
+  x: number
+  /** Normalized center Y position [0..1] on the strip */
+  y: number
+  /** Scale multiplier relative to default sticker size (0.35 .. 2.8) */
+  scale: number
+  /** Rotation in degrees (-180 .. 180) */
+  rotation: number
+}
+
+// ── Strip Design System ───────────────────────────────────────────────────
+
+export type StripThemeId =
+  | 'auto'
+  | 'vintage_cream'
+  | 'film_noir'
+  | 'pastel_pink'
+  | 'y2k_checker'
+  | 'gingham_picnic'
+  | 'midnight_stars'
+  | 'kraft_scrapbook'
+  | 'mint_retro'
+
+export type StripBorderStyle = 'classic' | 'rounded' | 'dashed' | 'none'
+
+export type StripDecoration = 'none' | 'stars' | 'hearts' | 'corners' | 'sparkles'
+
 // ── Session ───────────────────────────────────────────────────────────────
 
 export interface PhotoSession {
   photos: string[]
+  photoTransforms?: PhotoTransform[]
   filter: FilterType
   layout: LayoutType
   caption: string
   showDate: boolean
   poseCount: PoseCount
+  stickers?: PlacedSticker[]
+  stripTheme?: StripThemeId
+  borderStyle?: StripBorderStyle
+  stripDecoration?: StripDecoration
 }
 
 // ── Setup options ─────────────────────────────────────────────────────────
@@ -134,4 +204,62 @@ export function getLayoutsForPoseCount(poseCount: PoseCount): LayoutConfig[] {
 export function getDefaultLayout(poseCount: PoseCount): LayoutType {
   const available = getLayoutsForPoseCount(poseCount)
   return available[0]?.id ?? 'classic'
+}
+
+/**
+ * Returns the exact target aspect ratio (width / height) of each photo slot
+ * for a given layout, matching the dimensions used in canvasExport.ts.
+ */
+export function getLayoutSlotAspectRatios(layout: LayoutType, poseCount: PoseCount): number[] {
+  const fill = (ratio: number) => Array.from({ length: poseCount }, () => ratio)
+
+  switch (layout) {
+    case 'classic':
+      return fill(200 / 150) // 4:3
+    case 'classic_land':
+      return fill(280 / 160) // 7:4
+    case 'filmstrip':
+      return fill(220 / 165) // 4:3
+    case 'filmstrip_land':
+      return fill(240 / 160) // 3:2
+    case 'twostrip':
+      return fill(220 / 310) // ~0.71 portrait
+    case 'twostrip_land':
+      return fill(380 / 214) // ~16:9
+    case 'threestrip':
+      return fill(160 / 248) // ~0.645 portrait
+    case 'threestrip_land':
+      return fill(380 / 180) // ~2.11 landscape
+    case 'layout_h':
+      return [280 / 210, 160 / 100, 160 / 100]
+    case 'grid_4':
+      return fill(220 / 165) // 4:3
+    case 'grid_4_land':
+      return fill(280 / 190)
+    case 'layout_e': {
+      const smallH = (310 - 8 * 4.5) / 3
+      return [330 / 310, 150 / smallH, 150 / smallH, 150 / smallH]
+    }
+    case 'layout_9': {
+      const totalW = 24 + 480 + 5 * 2 + 24
+      const smallW = (totalW - 24 * 2 - 5 * 6 - 10 * 2) / 3
+      return [480 / 320, smallW / 130, smallW / 130, smallW / 130]
+    }
+    case 'layout_3':
+      return fill(175 / 132)
+    case 'layout_3_land':
+      return fill(210 / 158)
+    case 'grid_6':
+      return fill(220 / 165)
+    case 'polaroid_2':
+    case 'polaroid_3':
+    case 'polaroid_4':
+      return fill(200 / 150) // 4:3
+    case 'diagonal_2':
+    case 'diagonal_3':
+    case 'diagonal_4':
+      return fill(260 / 195) // 4:3
+    default:
+      return fill(4 / 3)
+  }
 }

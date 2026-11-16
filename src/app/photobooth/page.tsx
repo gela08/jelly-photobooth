@@ -7,10 +7,13 @@ import CameraBooth from '@/components/CameraBooth'
 import FilterSelector from '@/components/FilterSelector'
 import LayoutSelector from '@/components/LayoutSelector'
 import ExportPanel from '@/components/ExportPanel'
-import { generatePhotoboothCanvas } from '@/lib/canvasExport'
+import PhotoFrameEditor from '@/components/PhotoFrameEditor'
+import StripDesignSelector from '@/components/StripDesignSelector'
+import StickerEditor from '@/components/StickerEditor'
 import {
-  FilterType, LayoutType, PoseCount, CountdownSeconds, PhotoSession,
-  POSE_COUNT_OPTIONS, COUNTDOWN_OPTIONS, getDefaultLayout, FILTERS, ALL_LAYOUTS,
+  FilterType, LayoutType, PoseCount, CountdownSeconds, PhotoSession, PhotoTransform,
+  PlacedSticker, StripBorderStyle, StripDecoration, StripThemeId,
+  DEFAULT_PHOTO_TRANSFORM, POSE_COUNT_OPTIONS, COUNTDOWN_OPTIONS, getDefaultLayout, FILTERS, ALL_LAYOUTS,
 } from '@/lib/types'
 
 type Step = 'setup' | 'privacy' | 'camera' | 'customize' | 'export'
@@ -60,14 +63,6 @@ function DownloadIcon() {
     </svg>
   )
 }
-function ZoomIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-      <line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
-    </svg>
-  )
-}
 function CloseIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -84,7 +79,17 @@ function CheckIcon() {
 }
 
 // ── Photo Lightbox ─────────────────────────────────────────────────────────────
-function PhotoLightbox({ photos, startIndex, onClose }: { photos: string[]; startIndex: number; onClose: () => void }) {
+function PhotoLightbox({
+  photos,
+  startIndex,
+  cssFilter = 'none',
+  onClose,
+}: {
+  photos: string[]
+  startIndex: number
+  cssFilter?: string
+  onClose: () => void
+}) {
   const [idx, setIdx] = useState(startIndex)
 
   const prev = () => setIdx(i => Math.max(0, i - 1))
@@ -102,11 +107,12 @@ function PhotoLightbox({ photos, startIndex, onClose }: { photos: string[]; star
           alt={`Photo ${idx + 1}`}
           style={{
             maxWidth: 'min(92vw, 640px)',
-            maxHeight: 'min(85vh, 700px)',
+            maxHeight: 'min(82vh, 700px)',
             objectFit: 'contain',
             border: '6px solid white',
             boxShadow: '0 32px 100px rgba(0,0,0,0.8)',
             display: 'block',
+            filter: cssFilter,
           }}
         />
 
@@ -121,7 +127,7 @@ function PhotoLightbox({ photos, startIndex, onClose }: { photos: string[]; star
         {/* Close */}
         <button
           onClick={onClose}
-          className="absolute -top-4 -right-4 w-9 h-9 flex items-center justify-center rounded-full transition-all hover:scale-110 active:scale-90"
+          className="absolute -top-3 -right-3 sm:-top-4 sm:-right-4 w-9 h-9 flex items-center justify-center rounded-full transition-all hover:scale-110 active:scale-90"
           style={{ background: 'var(--vintage-brown)', color: 'white', boxShadow: '0 2px 8px rgba(0,0,0,0.4)' }}
           aria-label="Close"
         >
@@ -132,8 +138,9 @@ function PhotoLightbox({ photos, startIndex, onClose }: { photos: string[]; star
         {idx > 0 && (
           <button
             onClick={prev}
-            className="absolute top-1/2 -translate-y-1/2 -left-14 w-10 h-10 flex items-center justify-center rounded-full transition-all hover:scale-110 active:scale-90"
-            style={{ background: 'rgba(255,255,255,0.12)', color: 'white' }}
+            className="absolute top-1/2 -translate-y-1/2 left-2 sm:-left-14 w-10 h-10 flex items-center justify-center rounded-full transition-all hover:scale-110 active:scale-90"
+            style={{ background: 'rgba(14,11,8,0.65)', color: 'white' }}
+            aria-label="Previous photo"
           >
             <ArrowLeftIcon />
           </button>
@@ -143,8 +150,9 @@ function PhotoLightbox({ photos, startIndex, onClose }: { photos: string[]; star
         {idx < photos.length - 1 && (
           <button
             onClick={next}
-            className="absolute top-1/2 -translate-y-1/2 -right-14 w-10 h-10 flex items-center justify-center rounded-full transition-all hover:scale-110 active:scale-90"
-            style={{ background: 'rgba(255,255,255,0.12)', color: 'white' }}
+            className="absolute top-1/2 -translate-y-1/2 right-2 sm:-right-14 w-10 h-10 flex items-center justify-center rounded-full transition-all hover:scale-110 active:scale-90"
+            style={{ background: 'rgba(14,11,8,0.65)', color: 'white' }}
+            aria-label="Next photo"
           >
             <ArrowRightIcon />
           </button>
@@ -208,87 +216,72 @@ function StepProgress({ current }: { current: Step }) {
   )
 }
 
-// ── Live Preview ───────────────────────────────────────────────────────────────
-function LivePreview({ session }: { session: PhotoSession }) {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const [isGenerating, setIsGenerating] = useState(true)
-  const genIdRef = useRef(0)
-
-  useEffect(() => {
-    if (!session.photos.length) return
-    const id = ++genIdRef.current
-    setIsGenerating(true)
-    generatePhotoboothCanvas(session)
-      .then((canvas) => {
-        if (genIdRef.current === id) setPreviewUrl(canvas.toDataURL('image/jpeg', 0.85))
-      })
-      .catch(console.error)
-      .finally(() => { if (genIdRef.current === id) setIsGenerating(false) })
-  }, [session])
-
-  return (
-    <div className="section-card">
-      <p className="font-display text-xs tracking-widest uppercase mb-4" style={{ color: 'var(--text-muted)' }}>
-        Live Preview
-      </p>
-      <div className="flex justify-center">
-        {isGenerating ? (
-          <div className="flex flex-col items-center gap-3 py-10" style={{ color: 'var(--text-muted)' }}>
-            <div
-              className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin"
-              style={{ borderColor: 'var(--border)', borderTopColor: 'var(--vintage-brown)' }}
-            />
-            <span className="font-display text-xs tracking-widest uppercase">Rendering…</span>
-          </div>
-        ) : previewUrl ? (
-          <img
-            src={previewUrl}
-            alt="Live strip preview"
-            style={{
-              maxWidth: '100%',
-              maxHeight: '420px',
-              objectFit: 'contain',
-              border: '1px solid var(--border)',
-              boxShadow: '0 4px 24px var(--shadow-color)',
-            }}
-          />
-        ) : (
-          <p className="font-body text-xs py-6" style={{ color: 'var(--text-muted)' }}>Preview unavailable</p>
-        )}
-      </div>
-    </div>
-  )
-}
-
 // ── Customize Step ─────────────────────────────────────────────────────────────
 function CustomizeStep({
   photos,
+  photoTransforms,
   filter,
   layout,
   poseCount,
   caption,
   showDate,
+  stickers,
+  stripTheme,
+  borderStyle,
+  stripDecoration,
+  onTransformChange,
+  onResetTransforms,
   onFilterChange,
   onLayoutChange,
   onCaptionChange,
   onDateToggle,
+  onStickersChange,
+  onThemeChange,
+  onBorderChange,
+  onDecorationChange,
   onBack,
   onNext,
 }: {
   photos: string[]
+  photoTransforms: PhotoTransform[]
   filter: FilterType
   layout: LayoutType
   poseCount: PoseCount
   caption: string
   showDate: boolean
+  stickers: PlacedSticker[]
+  stripTheme: StripThemeId
+  borderStyle: StripBorderStyle
+  stripDecoration: StripDecoration
+  onTransformChange: (index: number, next: PhotoTransform) => void
+  onResetTransforms: () => void
   onFilterChange: (f: FilterType) => void
   onLayoutChange: (l: LayoutType) => void
   onCaptionChange: (c: string) => void
   onDateToggle: () => void
+  onStickersChange: (next: PlacedSticker[]) => void
+  onThemeChange: (id: StripThemeId) => void
+  onBorderChange: (style: StripBorderStyle) => void
+  onDecorationChange: (dec: StripDecoration) => void
   onBack: () => void
   onNext: () => void
 }) {
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null)
+  const cssFilter = FILTERS.find((f) => f.id === filter)?.cssFilter ?? 'none'
+
+  const currentSession: PhotoSession = {
+    photos,
+    photoTransforms,
+    filter,
+    layout,
+    caption,
+    showDate,
+    poseCount,
+    stickers,
+    stripTheme,
+    borderStyle,
+    stripDecoration,
+  }
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -296,6 +289,7 @@ function CustomizeStep({
         <PhotoLightbox
           photos={photos}
           startIndex={lightboxIdx}
+          cssFilter={cssFilter}
           onClose={() => setLightboxIdx(null)}
         />
       )}
@@ -305,52 +299,22 @@ function CustomizeStep({
           Customize Your Strip
         </h2>
         <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-          Choose your filter, layout, and details
+          Adjust photo framing, filter, strip design, and stickers
         </p>
       </div>
 
-      {/* Photo thumbnails — CLICK TO ENLARGE (FIX) */}
+      {/* Interactive photo framing & positioning */}
       <div className="section-card">
-        <p className="font-display text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--text-muted)' }}>
-          Your Photos — tap to enlarge
-        </p>
-        <div className="flex gap-3 flex-wrap">
-          {photos.map((photo, i) => (
-            <button
-              key={i}
-              onClick={() => setLightboxIdx(i)}
-              className="relative flex-shrink-0 rounded-sm overflow-hidden transition-all hover:scale-105 active:scale-95 group"
-              style={{
-                width: photos.length <= 3 ? '90px' : '72px',
-                aspectRatio: '4/3',
-                border: '2px solid var(--border)',
-                boxShadow: '0 2px 8px var(--shadow-color)',
-              }}
-              aria-label={`Enlarge photo ${i + 1}`}
-            >
-              <img
-                src={photo}
-                alt={`Photo ${i + 1}`}
-                className="w-full h-full object-cover"
-                style={{ filter: filter !== 'none' ? undefined : undefined }}
-              />
-              {/* Hover overlay with zoom icon */}
-              <div
-                className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-                style={{ background: 'rgba(26,20,16,0.5)' }}
-              >
-                <div style={{ color: 'white' }}><ZoomIcon /></div>
-              </div>
-              {/* Photo number badge */}
-              <div
-                className="absolute bottom-1 right-1 w-4 h-4 flex items-center justify-center rounded-full"
-                style={{ background: 'rgba(26,20,16,0.7)' }}
-              >
-                <span className="font-mono text-[9px] text-white">{i + 1}</span>
-              </div>
-            </button>
-          ))}
-        </div>
+        <PhotoFrameEditor
+          photos={photos}
+          transforms={photoTransforms}
+          layout={layout}
+          poseCount={poseCount}
+          filter={filter}
+          onChange={onTransformChange}
+          onResetAll={onResetTransforms}
+          onEnlarge={(idx) => setLightboxIdx(idx)}
+        />
       </div>
 
       {/* Filter selector */}
@@ -371,8 +335,26 @@ function CustomizeStep({
         />
       </div>
 
-      {/* Live Preview */}
-      <LivePreview session={{ photos, filter, layout, caption, showDate, poseCount }} />
+      {/* Strip Design System (Theme, Borders, Corner Accents) */}
+      <div className="section-card">
+        <StripDesignSelector
+          stripTheme={stripTheme}
+          borderStyle={borderStyle}
+          stripDecoration={stripDecoration}
+          onThemeChange={onThemeChange}
+          onBorderChange={onBorderChange}
+          onDecorationChange={onDecorationChange}
+        />
+      </div>
+
+      {/* Interactive Live Strip Preview + Sticker Editor */}
+      <div className="section-card">
+        <StickerEditor
+          session={currentSession}
+          stickers={stickers}
+          onChange={onStickersChange}
+        />
+      </div>
 
       {/* Caption & date */}
       <div className="section-card space-y-4">
@@ -498,7 +480,7 @@ function SessionSummary({
         <div className="flex items-center gap-2.5">
           <span style={{ color: 'var(--sepia)' }}><CameraSmIcon /></span>
           <span className="font-body text-sm" style={{ color: 'var(--text-secondary)' }}>
-            {poseCount} {poseCount === 2 ? 'photo' : 'photos'}
+            {poseCount} photos
           </span>
         </div>
         <div className="flex items-center gap-2.5">
@@ -656,6 +638,11 @@ export default function PhotoboothPage() {
   const [caption, setCaption] = useState('')
   const [showDate, setShowDate] = useState(true)
   const [photos, setPhotos] = useState<string[]>([])
+  const [photoTransforms, setPhotoTransforms] = useState<PhotoTransform[]>([])
+  const [stickers, setStickers] = useState<PlacedSticker[]>([])
+  const [stripTheme, setStripTheme] = useState<StripThemeId>('auto')
+  const [borderStyle, setBorderStyle] = useState<StripBorderStyle>('classic')
+  const [stripDecoration, setStripDecoration] = useState<StripDecoration>('none')
   const [showPrivacy, setShowPrivacy] = useState(false)
 
   const insideBooth = step === 'camera' || step === 'customize' || step === 'export'
@@ -672,24 +659,43 @@ export default function PhotoboothPage() {
 
   const handlePhotosCapture = useCallback((captured: string[]) => {
     setPhotos(captured)
+    setPhotoTransforms(captured.map(() => ({ ...DEFAULT_PHOTO_TRANSFORM })))
+    setStickers([])
     setStep('customize')
   }, [])
 
+  const handleTransformChange = useCallback((index: number, next: PhotoTransform) => {
+    setPhotoTransforms((prev) => {
+      const updated = [...prev]
+      updated[index] = next
+      return updated
+    })
+  }, [])
+
+  const handleResetTransforms = useCallback(() => {
+    setPhotoTransforms(photos.map(() => ({ ...DEFAULT_PHOTO_TRANSFORM })))
+  }, [photos])
+
   const session: PhotoSession = {
     photos,
+    photoTransforms,
     filter,
     layout,
     caption,
     showDate,
     poseCount,
+    stickers,
+    stripTheme,
+    borderStyle,
+    stripDecoration,
   }
 
   return (
-    <div className="min-h-screen film-grain select-none" style={{ background: 'var(--cream)' }}>
+    <div className="min-h-screen overflow-x-hidden film-grain select-none" style={{ background: 'var(--cream)' }}>
       <Nav insideBooth={insideBooth} onLeaveConfirm={() => setStep('setup')} />
 
-      <main className="pt-6">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-8 pb-2 sm:pt-10 sm:pb-4">
+      <main className="pt-14">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-6 pb-8 sm:pt-8 sm:pb-10">
 
           {/* Step indicator — only show for non-camera steps */}
           {step !== 'camera' && (
@@ -725,15 +731,26 @@ export default function PhotoboothPage() {
           {step === 'customize' && photos.length > 0 && (
             <CustomizeStep
               photos={photos}
+              photoTransforms={photoTransforms}
               filter={filter}
               layout={layout}
               poseCount={poseCount}
               caption={caption}
               showDate={showDate}
+              stickers={stickers}
+              stripTheme={stripTheme}
+              borderStyle={borderStyle}
+              stripDecoration={stripDecoration}
+              onTransformChange={handleTransformChange}
+              onResetTransforms={handleResetTransforms}
               onFilterChange={setFilter}
               onLayoutChange={setLayout}
               onCaptionChange={setCaption}
               onDateToggle={() => setShowDate((d) => !d)}
+              onStickersChange={setStickers}
+              onThemeChange={setStripTheme}
+              onBorderChange={setBorderStyle}
+              onDecorationChange={setStripDecoration}
               onBack={() => setStep('camera')}
               onNext={() => setStep('export')}
             />
@@ -763,6 +780,8 @@ export default function PhotoboothPage() {
                 session={session}
                 onRetake={() => {
                   setPhotos([])
+                  setPhotoTransforms([])
+                  setStickers([])
                   setStep('setup')
                 }}
               />

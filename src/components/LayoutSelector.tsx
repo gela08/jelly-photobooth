@@ -130,12 +130,12 @@ function LayoutPreview({ id, poses }: { id: LayoutType; poses: number }) {
           className="flex flex-col gap-1 p-1 shadow-sm"
           style={{
             width: '30px',
-            height: '60px',
+            height: '44px',
             background: 'white',
             border: '0.5px solid rgba(0,0,0,0.1)'
           }}
         >
-          {[0, 1, 2].map(i => (
+          {[0, 1].map(i => (
             <div
               key={i}
               className="flex-1"
@@ -143,7 +143,6 @@ function LayoutPreview({ id, poses }: { id: LayoutType; poses: number }) {
                 background: 'var(--vintage-brown)',
                 opacity: 0.4,
                 borderRadius: '0.5px',
-                // This ensures the photo area looks like a wide landscape
                 aspectRatio: '3 / 2'
               }}
             />
@@ -466,7 +465,7 @@ export default function LayoutSelector({ selected, poseCount, onSelect }: Layout
       <p className="font-display text-xs tracking-widest uppercase" style={{ color: 'var(--text-muted)' }}>
         Layout
       </p>
-      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {available.map((layout) => {
           const isSelected = selected === layout.id
           return (
@@ -474,7 +473,7 @@ export default function LayoutSelector({ selected, poseCount, onSelect }: Layout
             <button
               key={layout.id}
               onClick={() => onSelect(layout.id)}
-              className="flex flex-col items-center gap-5 p-5 rounded-sm transition-all duration-200"
+              className="flex flex-col items-center gap-3 sm:gap-5 p-3.5 sm:p-5 rounded-sm transition-all duration-200"
               style={{
                 border: `1px solid ${isSelected ? 'var(--vintage-brown)' : 'var(--border)'}`,
                 background: isSelected ? 'rgba(92,61,30,0.05)' : 'var(--surface)',
