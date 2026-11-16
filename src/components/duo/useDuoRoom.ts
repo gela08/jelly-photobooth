@@ -30,11 +30,35 @@ function getOrCreateClientId(): string {
   return existing
 }
 
+function resolveDuoWsUrl(): string {
+  const configured = process.env.NEXT_PUBLIC_DUO_WS_URL?.trim()
+  if (configured) {
+    let url = configured
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      url = url.replace(/^http/, 'ws')
+    }
+    if (url.startsWith('ws://') || url.startsWith('wss://')) {
+      try {
+        const parsed = new URL(url)
+        if (!parsed.pathname || parsed.pathname === '/') {
+          parsed.pathname = '/api/duo-ws'
+        }
+        return parsed.toString()
+      } catch {
+        return url
+      }
+    }
+  }
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${proto}//${window.location.host}/api/duo-ws`
+}
+
 export type RtcTransportStatus = 'idle' | 'connecting' | 'connected' | 'relay'
 
 export interface UseDuoRoomReturn {
   clientId: string
   wsConnected: boolean
+  wsConnecting: boolean
   room: DuoRoomSnapshot | null
   myRole: DuoRole | null
   shots: DuoPoseShot[]
@@ -62,6 +86,7 @@ export interface UseDuoRoomReturn {
 export function useDuoRoom(): UseDuoRoomReturn {
   const [clientId] = useState<string>(() => getOrCreateClientId())
   const [wsConnected, setWsConnected] = useState(false)
+  const [wsConnecting, setWsConnecting] = useState(false)
   const [room, setRoom] = useState<DuoRoomSnapshot | null>(null)
   const [myRole, setMyRole] = useState<DuoRole | null>(null)
   const [shots, setShots] = useState<DuoPoseShot[]>([])
@@ -75,6 +100,8 @@ export function useDuoRoom(): UseDuoRoomReturn {
   const [shutterFlash, setShutterFlash] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
+  const pendingOpenActionRef = useRef<(() => void) | null>(null)
+  const didOpenSocketRef = useRef(false)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const clockOffsetMsRef = useRef(0)
@@ -516,24 +543,43 @@ export function useDuoRoom(): UseDuoRoomReturn {
       }
       if (existing && existing.readyState === WebSocket.CONNECTING) {
         if (onOpenAction) {
-          existing.addEventListener('open', onOpenAction, { once: true })
+          pendingOpenActionRef.current = onOpenAction
         }
         return
       }
 
-      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const ws = new WebSocket(`${proto}//${window.location.host}/api/duo-ws`)
+      if (onOpenAction) {
+        pendingOpenActionRef.current = onOpenAction
+      }
+      didOpenSocketRef.current = false
+      setWsConnecting(true)
+
+      let wsUrl: string
+      try {
+        wsUrl = resolveDuoWsUrl()
+      } catch {
+        setWsConnecting(false)
+        setError('Invalid Remote Duo WebSocket URL configuration.')
+        return
+      }
+
+      const ws = new WebSocket(wsUrl)
       wsRef.current = ws
 
       ws.onopen = () => {
+        didOpenSocketRef.current = true
+        setWsConnecting(false)
         setWsConnected(true)
+        setError(null)
         sendWs({ type: 'duo:ping', clientSentMs: Date.now() })
         if (pingIntervalRef.current) clearInterval(pingIntervalRef.current)
         pingIntervalRef.current = setInterval(() => {
           sendWs({ type: 'duo:ping', clientSentMs: Date.now() })
         }, 4000)
 
-        if (activeRoomCodeRef.current && !onOpenAction) {
+        const queued = pendingOpenActionRef.current
+        pendingOpenActionRef.current = null
+        if (activeRoomCodeRef.current && !queued) {
           sendWs({
             type: 'duo:join_room',
             roomCode: activeRoomCodeRef.current,
@@ -541,7 +587,7 @@ export function useDuoRoom(): UseDuoRoomReturn {
             name: displayNameRef.current,
           })
         }
-        onOpenAction?.()
+        queued?.()
       }
 
       ws.onmessage = (evt) => {
@@ -553,12 +599,37 @@ export function useDuoRoom(): UseDuoRoomReturn {
         }
       }
 
+      ws.onerror = () => {
+        if (!didOpenSocketRef.current) {
+          setWsConnecting(false)
+        }
+      }
+
       ws.onclose = () => {
+        setWsConnecting(false)
         setWsConnected(false)
+        if (wsRef.current === ws) {
+          wsRef.current = null
+        }
         if (pingIntervalRef.current) {
           clearInterval(pingIntervalRef.current)
           pingIntervalRef.current = null
         }
+
+        if (!didOpenSocketRef.current && !intentionalLeaveRef.current) {
+          pendingOpenActionRef.current = null
+          const isVercelHost =
+            typeof window !== 'undefined' &&
+            window.location.hostname.endsWith('.vercel.app') &&
+            !process.env.NEXT_PUBLIC_DUO_WS_URL
+          setError(
+            isVercelHost
+              ? 'Remote Duo WebSockets cannot run on Vercel Serverless Functions (/api/duo-ws). Deploy the Node server (node server.ts) on a WebSocket host like Render, Railway, or Fly.io—or set NEXT_PUBLIC_DUO_WS_URL in Vercel to point to your WS server.'
+              : 'Could not connect to the Remote Duo live room server (/api/duo-ws). Make sure the custom server (node server.ts) or NEXT_PUBLIC_DUO_WS_URL WebSocket relay is running.'
+          )
+          return
+        }
+
         if (!intentionalLeaveRef.current && activeRoomCodeRef.current) {
           reconnectTimerRef.current = setTimeout(() => {
             ensureSocket()
@@ -589,6 +660,7 @@ export function useDuoRoom(): UseDuoRoomReturn {
   const createRoom = useCallback(
     (displayName: string) => {
       intentionalLeaveRef.current = false
+      setError(null)
       displayNameRef.current = displayName.trim() || 'Host'
       ensureSocket(() => {
         sendWs({
@@ -604,6 +676,7 @@ export function useDuoRoom(): UseDuoRoomReturn {
   const joinRoom = useCallback(
     (roomCode: string, displayName: string) => {
       intentionalLeaveRef.current = false
+      setError(null)
       const normalized = roomCode.trim().toUpperCase()
       if (!normalized) {
         setError('Enter a room code to join.')
@@ -716,6 +789,7 @@ export function useDuoRoom(): UseDuoRoomReturn {
   return {
     clientId,
     wsConnected,
+    wsConnecting,
     room,
     myRole,
     shots,

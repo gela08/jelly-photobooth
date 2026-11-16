@@ -15,14 +15,29 @@ const S = 2 // 2× scale for high-res output
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
+const imageCache = new Map<string, Promise<HTMLImageElement>>()
+
 export function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
+  const cached = imageCache.get(src)
+  if (cached) return cached
+
+  const promise = new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image()
     img.crossOrigin = 'anonymous'
     img.onload = () => resolve(img)
-    img.onerror = () => reject(new Error('Failed to load image'))
+    img.onerror = () => {
+      imageCache.delete(src)
+      reject(new Error('Failed to load image'))
+    }
     img.src = src
   })
+
+  if (imageCache.size >= 36) {
+    const oldestKey = imageCache.keys().next().value
+    if (oldestKey !== undefined) imageCache.delete(oldestKey)
+  }
+  imageCache.set(src, promise)
+  return promise
 }
 
 /** Deterministic PRNG so paper grain / stars don't flicker on every edit */
@@ -149,7 +164,7 @@ function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: num
 export function resolveEffectiveTheme(session: PhotoSession, layout: LayoutType): StripThemeConfig {
   const selectedId = session.stripTheme ?? 'auto'
   if (selectedId !== 'auto') {
-    return getStripTheme(selectedId)
+    return getStripTheme(selectedId, session.customStripColor)
   }
 
   if (layout === 'classic' || layout === 'classic_land') {
@@ -302,6 +317,57 @@ export function drawThemeBackground(ctx: CanvasRenderingContext2D, w: number, h:
       ctx.restore()
       break
     }
+    case 'gradient': {
+      const grad = ctx.createLinearGradient(0, 0, 0, h)
+      grad.addColorStop(0, theme.bgPrimary)
+      grad.addColorStop(1, theme.bgSecondary || theme.bgPrimary)
+      ctx.fillStyle = grad
+      ctx.fillRect(0, 0, w, h)
+
+      ctx.save()
+      ctx.globalAlpha = 0.015
+      for (let i = 0; i < 4500; i++) {
+        ctx.fillStyle = rng() > 0.5 ? '#000' : '#fff'
+        ctx.fillRect(rng() * w, rng() * h, 1, 1)
+      }
+      ctx.restore()
+      break
+    }
+    case 'polka': {
+      ctx.fillStyle = theme.bgPrimary
+      ctx.fillRect(0, 0, w, h)
+      const step = 28 * S
+      const dotR = 4.5 * S
+      ctx.save()
+      ctx.fillStyle = theme.bgSecondary || '#d8b998'
+      ctx.globalAlpha = 0.65
+      for (let row = -1; row <= Math.ceil(h / (step * 0.85)) + 1; row++) {
+        const y = row * (step * 0.85)
+        const xOffset = row % 2 === 0 ? 0 : step / 2
+        for (let col = -1; col <= Math.ceil(w / step) + 1; col++) {
+          const x = col * step + xOffset
+          ctx.beginPath()
+          ctx.arc(x, y, dotR, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      }
+      ctx.restore()
+      break
+    }
+    case 'stripe': {
+      ctx.fillStyle = theme.bgPrimary
+      ctx.fillRect(0, 0, w, h)
+      const stripeW = 11 * S
+      const period = 22 * S
+      ctx.save()
+      ctx.fillStyle = theme.bgSecondary || '#e8dac6'
+      ctx.globalAlpha = 0.72
+      for (let x = 0; x < w; x += period) {
+        ctx.fillRect(x, 0, stripeW, h)
+      }
+      ctx.restore()
+      break
+    }
     case 'paper':
     default: {
       ctx.fillStyle = theme.bgPrimary
@@ -423,7 +489,7 @@ export function drawStripTitle(ctx: CanvasRenderingContext2D, totalW: number, y:
   ctx.fillStyle = theme.titleColor
   ctx.font = `bold ${12 * S}px 'Courier New', monospace`
   ctx.textAlign = 'center'
-  ctx.fillText("JELLY'S PHOTOBOOTH", totalW / 2, y)
+  ctx.fillText("JELLY'S PHOTOBOOTH", totalW / 2, y, Math.max(80 * S, totalW - 20 * S))
   ctx.restore()
 }
 
@@ -436,13 +502,14 @@ export function drawStripBottom(
   theme: StripThemeConfig
 ): number {
   let y = startY
+  const maxTextW = Math.max(80 * S, totalW - 24 * S)
   if (caption) {
     y += 18 * S
     ctx.save()
     ctx.fillStyle = theme.captionColor
     ctx.font = `italic ${11 * S}px 'Courier New', monospace`
     ctx.textAlign = 'center'
-    ctx.fillText(`"${caption}"`, totalW / 2, y)
+    ctx.fillText(`"${caption}"`, totalW / 2, y, maxTextW)
     ctx.restore()
     y += 18 * S
   }
@@ -453,7 +520,7 @@ export function drawStripBottom(
     ctx.font = `${9 * S}px 'Courier New', monospace`
     ctx.textAlign = 'center'
     const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-    ctx.fillText(dateStr, totalW / 2, y)
+    ctx.fillText(dateStr, totalW / 2, y, maxTextW)
     ctx.restore()
     y += 14 * S
   }
@@ -666,15 +733,15 @@ async function generateClassic(
   ctx.fillStyle = theme.titleColor
   ctx.font = `bold ${10 * S}px 'Courier New', monospace`
   ctx.textAlign = 'center'
-  ctx.fillText("JELLY'S PHOTOBOOTH", totalW / 2, stripPad + titleH * 0.7)
+  ctx.fillText("JELLY'S PHOTOBOOTH", totalW / 2, stripPad + titleH * 0.56, Math.max(80 * S, totalW - 20 * S))
   ctx.restore()
 
-  // Decorative title line
+  // Decorative title line cleanly above first photo
   ctx.save()
   ctx.strokeStyle = theme.dividerColor; ctx.lineWidth = 1
   ctx.beginPath()
-  ctx.moveTo(stripPad, stripPad + titleH + 2)
-  ctx.lineTo(totalW - stripPad, stripPad + titleH + 2)
+  ctx.moveTo(stripPad, stripPad + titleH - 5 * S)
+  ctx.lineTo(totalW - stripPad, stripPad + titleH - 5 * S)
   ctx.stroke()
   ctx.restore()
 
@@ -736,28 +803,44 @@ async function generateFilmstrip(
   const holeW = 12 * S
   const holeH = 16 * S
   const holeSpacing = holeH + 7 * S
-  const titleH = 22 * S
+  const titleH = 26 * S
   const topPad = 14 * S
-  const photoGap = 5 * S
-  const captionH = (session.caption ? 32 * S : 0) + (session.showDate ? 24 * S : 0)
+  const photoGap = 6 * S
+  const captionH = (session.caption ? 36 * S : 0) + (session.showDate ? 28 * S : 0)
   const borderStyle = session.borderStyle ?? 'classic'
   const isDefaultTheme = (session.stripTheme ?? 'auto') === 'auto'
 
   if (landscape) {
     const photoW = 240 * S
     const photoH = 160 * S
-    const totalW = topPad + titleH + n * (photoW + photoGap) - photoGap + 20 * S + captionH + 20 * S
-    const totalH = sprocketW * 2 + photoH + innerPad * 2
+    const sidePad = 18 * S
+    const trackH = sprocketW * 2 + photoH + innerPad * 2
+    const headerBand = topPad + titleH
+    const bottomPad = 14 * S
+    const totalW = sidePad * 2 + n * photoW + (n - 1) * photoGap
+    const totalH = headerBand + trackH + (captionH > 0 ? 10 * S + captionH : 0) + bottomPad
 
-    canvas.width = totalW; canvas.height = totalH
+    canvas.width = totalW
+    canvas.height = totalH
     const ctx = canvas.getContext('2d')!
 
     drawThemeBackground(ctx, totalW, totalH, theme)
-    ctx.fillStyle = isDefaultTheme ? '#1a1208' : (theme.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(92,61,30,0.09)')
-    ctx.fillRect(0, sprocketW, totalW, photoH + innerPad * 2)
 
-    const holeYT = Math.floor((sprocketW - holeW) / 2)
-    const holeYB = sprocketW + photoH + innerPad * 2 + Math.floor((sprocketW - holeW) / 2)
+    // Title safely above the top sprocket track
+    ctx.save()
+    ctx.fillStyle = theme.titleColor
+    ctx.font = `bold ${10 * S}px 'Courier New', monospace`
+    ctx.textAlign = 'center'
+    ctx.fillText("JELLY'S PHOTOBOOTH", totalW / 2, topPad + titleH * 0.62)
+    ctx.restore()
+
+    // Film track band
+    const filmTop = headerBand
+    ctx.fillStyle = isDefaultTheme ? '#1a1208' : (theme.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(92,61,30,0.09)')
+    ctx.fillRect(0, filmTop + sprocketW, totalW, photoH + innerPad * 2)
+
+    const holeYT = filmTop + Math.floor((sprocketW - holeW) / 2)
+    const holeYB = filmTop + sprocketW + photoH + innerPad * 2 + Math.floor((sprocketW - holeW) / 2)
     const holesCount = Math.ceil(totalW / holeSpacing) + 2
     for (let i = 0; i < holesCount; i++) {
       const hx = i * holeSpacing + 6 * S
@@ -769,44 +852,36 @@ async function generateFilmstrip(
       roundedRect(ctx, hx, holeYB, holeH, holeW, 2 * S); ctx.stroke()
     }
 
-    ctx.save()
-    ctx.fillStyle = theme.titleColor
-    ctx.font = `bold ${9 * S}px 'Courier New', monospace`
-    ctx.textAlign = 'center'
-    ctx.fillText("JELLY'S PHOTOBOOTH", totalW / 2, topPad + titleH * 0.65)
-    ctx.restore()
-
-    const photoY = sprocketW + innerPad
+    const photoY = filmTop + sprocketW + innerPad
     imgs.forEach((img, i) => {
-      const photoX = topPad + titleH + i * (photoW + photoGap)
+      const photoX = sidePad + i * (photoW + photoGap)
       drawPhoto(ctx, img, session.filter, photoX, photoY, photoW, photoH, session.photoTransforms?.[i], borderStyle, theme.isDark)
       ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1
-      ctx.strokeRect(photoX, photoY, photoW, photoH)
+      if (borderStyle === 'rounded') {
+        roundedRect(ctx, photoX, photoY, photoW, photoH, 7 * S); ctx.stroke()
+      } else {
+        ctx.strokeRect(photoX, photoY, photoW, photoH)
+      }
       ctx.save()
-      ctx.fillStyle = 'rgba(245,235,215,0.65)'
+      ctx.fillStyle = 'rgba(245,235,215,0.72)'
       ctx.font = `${7 * S}px 'Courier New', monospace`
       ctx.textAlign = 'left'
-      ctx.fillText(String(i + 1).padStart(2, '0'), photoX + 3 * S, photoY + photoH - 3 * S)
+      ctx.fillText(String(i + 1).padStart(2, '0'), photoX + 4 * S, photoY + photoH - 4 * S)
       ctx.restore()
     })
 
-    let cy = topPad + titleH + n * (photoW + photoGap) - photoGap + 16 * S
-    if (session.caption) {
-      cy += 14 * S
-      ctx.save(); ctx.fillStyle = theme.captionColor; ctx.font = `italic ${10 * S}px Georgia, serif`; ctx.textAlign = 'center'
-      ctx.fillText(`"${session.caption}"`, totalW / 2, cy); ctx.restore(); cy += 18 * S
-    }
-    if (session.showDate) {
-      ctx.save(); ctx.fillStyle = theme.dateColor; ctx.font = `${8 * S}px 'Courier New', monospace`; ctx.textAlign = 'center'
-      ctx.fillText(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), totalW / 2, cy); ctx.restore()
+    if (captionH > 0) {
+      drawStripBottom(ctx, session.caption, session.showDate, totalW, filmTop + trackH + 6 * S, theme)
     }
   } else {
     const photoW = 220 * S
     const photoH = 165 * S
     const totalW = sprocketW * 2 + photoW + innerPad * 2
-    const totalH = topPad + titleH + n * (photoH + photoGap) - photoGap + 20 * S + captionH + 20 * S
+    const photosBottom = topPad + titleH + n * (photoH + photoGap) - photoGap
+    const totalH = photosBottom + (captionH > 0 ? 14 * S + captionH : 0) + 18 * S
 
-    canvas.width = totalW; canvas.height = totalH
+    canvas.width = totalW
+    canvas.height = totalH
     const ctx = canvas.getContext('2d')!
 
     drawThemeBackground(ctx, totalW, totalH, theme)
@@ -828,9 +903,9 @@ async function generateFilmstrip(
 
     ctx.save()
     ctx.fillStyle = theme.titleColor
-    ctx.font = `bold ${9 * S}px 'Courier New', monospace`
+    ctx.font = `bold ${9.5 * S}px 'Courier New', monospace`
     ctx.textAlign = 'center'
-    ctx.fillText("JELLY'S PHOTOBOOTH", totalW / 2, topPad + titleH * 0.65)
+    ctx.fillText("JELLY'S PHOTOBOOTH", totalW / 2, topPad + titleH * 0.62)
     ctx.restore()
 
     const photoX = sprocketW + innerPad
@@ -838,24 +913,21 @@ async function generateFilmstrip(
       const photoY = topPad + titleH + i * (photoH + photoGap)
       drawPhoto(ctx, img, session.filter, photoX, photoY, photoW, photoH, session.photoTransforms?.[i], borderStyle, theme.isDark)
       ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1
-      ctx.strokeRect(photoX, photoY, photoW, photoH)
+      if (borderStyle === 'rounded') {
+        roundedRect(ctx, photoX, photoY, photoW, photoH, 7 * S); ctx.stroke()
+      } else {
+        ctx.strokeRect(photoX, photoY, photoW, photoH)
+      }
       ctx.save()
-      ctx.fillStyle = 'rgba(245,235,215,0.65)'
+      ctx.fillStyle = 'rgba(245,235,215,0.72)'
       ctx.font = `${7 * S}px 'Courier New', monospace`
       ctx.textAlign = 'left'
-      ctx.fillText(String(i + 1).padStart(2, '0'), photoX + 3 * S, photoY + photoH - 3 * S)
+      ctx.fillText(String(i + 1).padStart(2, '0'), photoX + 4 * S, photoY + photoH - 4 * S)
       ctx.restore()
     })
 
-    let cy = topPad + titleH + n * (photoH + photoGap) - photoGap + 16 * S
-    if (session.caption) {
-      cy += 14 * S
-      ctx.save(); ctx.fillStyle = theme.captionColor; ctx.font = `italic ${10 * S}px Georgia, serif`; ctx.textAlign = 'center'
-      ctx.fillText(`"${session.caption}"`, totalW / 2, cy); ctx.restore(); cy += 18 * S
-    }
-    if (session.showDate) {
-      ctx.save(); ctx.fillStyle = theme.dateColor; ctx.font = `${8 * S}px 'Courier New', monospace`; ctx.textAlign = 'center'
-      ctx.fillText(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), totalW / 2, cy); ctx.restore()
+    if (captionH > 0) {
+      drawStripBottom(ctx, session.caption, session.showDate, totalW, photosBottom + 10 * S, theme)
     }
   }
 }
@@ -957,9 +1029,9 @@ async function generateLayoutH(session: PhotoSession, canvas: HTMLCanvasElement,
   const imgs = await Promise.all(session.photos.slice(0, 3).map(loadImage))
   const pad = 24 * S, gap = 10 * S, bw = 5 * S
   const titleH = 28 * S
-  const captionH = (session.caption ? 36 * S : 0) + (session.showDate ? 26 * S : 0)
+  const captionH = (session.caption ? 36 * S : 0) + (session.showDate ? 28 * S : 0)
   const bigW = 280 * S, bigH = 210 * S
-  const smallW = 160 * S, smallH = (bigH - gap) / 2
+  const smallW = 160 * S, smallH = (bigH - gap - bw * 2) / 2
   const totalW = pad + bigW + bw * 2 + gap + smallW + bw * 2 + pad
   const totalH = pad + titleH + bigH + bw * 2 + captionH + pad
   const borderStyle = session.borderStyle ?? 'classic'
@@ -984,12 +1056,12 @@ async function generateGrid4(
 ) {
   const imgs = await Promise.all(session.photos.slice(0, 4).map(loadImage))
   const pad = 24 * S
-  const bw = landscape ? 0 : 5 * S
-  const gap = landscape ? 0 : 12 * S
+  const bw = landscape ? 4 * S : 5 * S
+  const gap = landscape ? 8 * S : 12 * S
   const borderStyle = session.borderStyle ?? 'classic'
 
   const titleH = 28 * S
-  const captionH = (session.caption ? 36 * S : 0) + (session.showDate ? 26 * S : 0)
+  const captionH = (session.caption ? 36 * S : 0) + (session.showDate ? 28 * S : 0)
 
   const photoW = landscape ? 280 * S : 220 * S
   const photoH = landscape ? 190 * S : 165 * S
@@ -1033,7 +1105,7 @@ async function generateLayoutE(session: PhotoSession, canvas: HTMLCanvasElement,
   const titleH = 28 * S
   const captionH = (session.caption ? 36 * S : 0) + (session.showDate ? 26 * S : 0)
   const bigH = 310 * S, bigW = 330 * S
-  const smallW = 150 * S, smallH = (bigH - gap * 4.5) / 3
+  const smallW = 150 * S, smallH = (bigH - bw * 4 - gap * 2) / 3
   const totalW = pad + bigW + bw * 2 + gap + smallW + bw * 2 + pad
   const totalH = pad + titleH + bigH + bw * 2 + captionH + pad
   const borderStyle = session.borderStyle ?? 'classic'
@@ -1246,10 +1318,11 @@ async function generateDiagonal(session: PhotoSession, canvas: HTMLCanvasElement
   const photoW = 260 * S, photoH = 195 * S, bw = 5 * S
   const pad = 32 * S, titleH = 30 * S
   const offset = 32 * S, overlap = 20 * S
-  const captionH = (session.caption ? 40 * S : 0) + (session.showDate ? 26 * S : 0)
+  const captionH = (session.caption ? 40 * S : 0) + (session.showDate ? 28 * S : 0)
   const totalW = pad * 2 + photoW + bw * 2 + offset
   const rowH = photoH + bw * 2 - overlap
-  const totalH = pad + titleH + n * rowH + overlap + captionH + pad
+  const bottomPhotosY = pad + titleH + n * rowH + overlap + bw
+  const totalH = bottomPhotosY + captionH + pad
   const borderStyle = session.borderStyle ?? 'classic'
 
   canvas.width = totalW; canvas.height = totalH
@@ -1264,7 +1337,451 @@ async function generateDiagonal(session: PhotoSession, canvas: HTMLCanvasElement
     drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
   })
 
-  drawStripBottom(ctx, session.caption, session.showDate, totalW, pad + titleH + n * rowH + overlap + bw, theme)
+  drawStripBottom(ctx, session.caption, session.showDate, totalW, bottomPhotosY, theme)
+}
+
+// ── WIDE STRIP (16:10 archival frames + index marks) ──────────────────────────
+async function generateWideStrip(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
+  const imgs = await Promise.all(session.photos.map(loadImage))
+  const n = imgs.length
+  const pad = 20 * S
+  const bw = 4 * S
+  const gap = 10 * S
+  const titleH = 30 * S
+  const captionH = (session.caption ? 36 * S : 0) + (session.showDate ? 26 * S : 0)
+  const photoW = 240 * S
+  const photoH = 150 * S
+  const totalW = pad * 2 + photoW + bw * 2
+  const photosSpan = n * (photoH + bw * 2) + (n - 1) * gap
+  const totalH = pad + titleH + photosSpan + captionH + pad
+  const borderStyle = session.borderStyle ?? 'classic'
+
+  canvas.width = totalW; canvas.height = totalH
+  const ctx = canvas.getContext('2d')!
+  drawThemeBackground(ctx, totalW, totalH, theme)
+  drawStripTitle(ctx, totalW, pad + titleH * 0.65, theme)
+
+  imgs.forEach((img, i) => {
+    const x = pad + bw
+    const y = pad + titleH + bw + i * (photoH + bw * 2 + gap)
+    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
+    ctx.save()
+    ctx.fillStyle = theme.dateColor
+    ctx.font = `${7.5 * S}px 'Courier New', monospace`
+    ctx.textAlign = 'right'
+    ctx.fillText(String(i + 1).padStart(2, '0'), x + photoW - 4 * S, y + photoH - 5 * S)
+    ctx.restore()
+  })
+
+  drawStripBottom(ctx, session.caption, session.showDate, totalW, pad + titleH + photosSpan + 4 * S, theme)
+}
+
+// ── DOUBLE CUT (Two matching classic strips side-by-side) ─────────────────────
+async function generateDoubleCut(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
+  const imgs = await Promise.all(session.photos.map(loadImage))
+  const n = imgs.length
+  const outerPad = 14 * S
+  const centerGap = 14 * S
+  const bw = 3 * S
+  const photoGap = 7 * S
+  const titleH = 26 * S
+  const photoW = 165 * S
+  const photoH = 124 * S
+  const captionH = (session.caption ? 34 * S : 0) + (session.showDate ? 24 * S : 0)
+
+  const stripW = photoW + bw * 2
+  const totalW = outerPad * 2 + stripW * 2 + centerGap
+  const photosSpan = n * (photoH + bw * 2) + (n - 1) * photoGap
+  const totalH = outerPad + titleH + photosSpan + captionH + outerPad + 4 * S
+  const borderStyle = session.borderStyle ?? 'classic'
+
+  canvas.width = totalW; canvas.height = totalH
+  const ctx = canvas.getContext('2d')!
+  drawThemeBackground(ctx, totalW, totalH, theme)
+
+  const colCenters = [
+    outerPad + stripW / 2,
+    outerPad + stripW + centerGap + stripW / 2,
+  ]
+
+  // Center dashed cut guide
+  ctx.save()
+  ctx.strokeStyle = theme.dividerColor
+  ctx.lineWidth = 1.2 * S
+  ctx.setLineDash([5 * S, 5 * S])
+  ctx.beginPath()
+  ctx.moveTo(totalW / 2, outerPad)
+  ctx.lineTo(totalW / 2, totalH - outerPad)
+  ctx.stroke()
+  ctx.restore()
+
+  colCenters.forEach((cx) => {
+    ctx.save()
+    ctx.fillStyle = theme.titleColor
+    ctx.font = `bold ${9.5 * S}px 'Courier New', monospace`
+    ctx.textAlign = 'center'
+    ctx.fillText("JELLY'S PHOTOBOOTH", cx, outerPad + titleH * 0.65, stripW - 8 * S)
+    ctx.restore()
+
+    const px = cx - photoW / 2
+    imgs.forEach((img, i) => {
+      const py = outerPad + titleH + bw + i * (photoH + bw * 2 + photoGap)
+      drawPhotoFramed(ctx, img, session.filter, px, py, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
+    })
+
+    let by = outerPad + titleH + photosSpan + 4 * S
+    if (session.caption) {
+      by += 16 * S
+      ctx.save()
+      ctx.fillStyle = theme.captionColor
+      ctx.font = `italic ${9.5 * S}px 'Courier New', monospace`
+      ctx.textAlign = 'center'
+      ctx.fillText(`"${session.caption}"`, cx, by, stripW - 8 * S)
+      ctx.restore()
+      by += 14 * S
+    }
+    if (session.showDate) {
+      if (!session.caption) by += 13 * S
+      ctx.save()
+      ctx.fillStyle = theme.dateColor
+      ctx.font = `${8 * S}px 'Courier New', monospace`
+      ctx.textAlign = 'center'
+      const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+      ctx.fillText(dateStr, cx, by, stripW - 8 * S)
+      ctx.restore()
+    }
+  })
+}
+
+// ── POSTCARD (4×6 landscape archival card with right typography panel) ────────
+async function generatePostcard(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
+  const imgs = await Promise.all(session.photos.map(loadImage))
+  const n = imgs.length
+  const pad = 22 * S
+  const gap = 9 * S
+  const bw = 4 * S
+  const panelGap = 18 * S
+  const panelW = 152 * S
+  const borderStyle = session.borderStyle ?? 'classic'
+
+  const cols = n <= 2 ? 1 : n <= 4 ? 2 : 3
+  const rows = n <= 2 ? 2 : 2
+  const photoW = n <= 2 ? 216 * S : n <= 4 ? 164 * S : 144 * S
+  const photoH = Math.round(photoW * 0.75) // exact 4:3
+
+  const gridW = cols * (photoW + bw * 2) + (cols - 1) * gap
+  const gridH = rows * (photoH + bw * 2) + (rows - 1) * gap
+
+  const totalW = pad * 2 + gridW + panelGap + panelW
+  const totalH = pad * 2 + gridH
+
+  canvas.width = totalW; canvas.height = totalH
+  const ctx = canvas.getContext('2d')!
+  drawThemeBackground(ctx, totalW, totalH, theme)
+
+  imgs.forEach((img, i) => {
+    const col = cols === 1 ? 0 : i % cols
+    const row = cols === 1 ? i : Math.floor(i / cols)
+    const x = pad + bw + col * (photoW + bw * 2 + gap)
+    const y = pad + bw + row * (photoH + bw * 2 + gap)
+    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
+  })
+
+  // If 3 poses in 2×2 grid, turn the 4th cell into an editorial studio stamp box
+  if (n === 3) {
+    const sx = pad + (photoW + bw * 2 + gap)
+    const sy = pad + (photoH + bw * 2 + gap)
+    const sw = photoW + bw * 2
+    const sh = photoH + bw * 2
+    ctx.save()
+    ctx.strokeStyle = theme.dividerColor
+    ctx.lineWidth = 1.2 * S
+    ctx.strokeRect(sx + 2 * S, sy + 2 * S, sw - 4 * S, sh - 4 * S)
+    ctx.fillStyle = theme.captionColor
+    ctx.font = `bold ${10 * S}px 'Courier New', monospace`
+    ctx.textAlign = 'center'
+    ctx.fillText('ARCHIVE NO. 03', sx + sw / 2, sy + sh / 2 - 4 * S)
+    ctx.fillStyle = theme.dateColor
+    ctx.font = `${8.5 * S}px 'Courier New', monospace`
+    ctx.fillText('THREE CUT EDITION', sx + sw / 2, sy + sh / 2 + 12 * S)
+    ctx.restore()
+  }
+
+  // Right postcard editorial panel
+  const divX = pad + gridW + panelGap / 2
+  ctx.save()
+  ctx.strokeStyle = theme.dividerColor
+  ctx.lineWidth = 1.2 * S
+  ctx.beginPath()
+  ctx.moveTo(divX, pad + 4 * S)
+  ctx.lineTo(divX, totalH - pad - 4 * S)
+  ctx.stroke()
+  ctx.restore()
+
+  const panelX = divX + panelGap / 2
+  // Postage stamp mark top-right
+  const stampW = 44 * S
+  const stampH = 52 * S
+  ctx.save()
+  ctx.strokeStyle = theme.dividerColor
+  ctx.lineWidth = 1.2 * S
+  ctx.setLineDash([3 * S, 2 * S])
+  ctx.strokeRect(totalW - pad - stampW, pad + 2 * S, stampW, stampH)
+  ctx.setLineDash([])
+  ctx.fillStyle = theme.dateColor
+  ctx.font = `bold ${7.5 * S}px 'Courier New', monospace`
+  ctx.textAlign = 'center'
+  ctx.fillText('JELLY', totalW - pad - stampW / 2, pad + 23 * S)
+  ctx.fillText('STUDIO', totalW - pad - stampW / 2, pad + 36 * S)
+  ctx.restore()
+
+  // Postcard brand & caption lines
+  ctx.save()
+  ctx.fillStyle = theme.titleColor
+  ctx.font = `bold ${10.5 * S}px 'Courier New', monospace`
+  ctx.textAlign = 'left'
+  ctx.fillText("JELLY'S", panelX, pad + 26 * S, panelW - stampW - 8 * S)
+  ctx.fillText('PHOTOBOOTH', panelX, pad + 40 * S, panelW - stampW - 8 * S)
+
+  const lineStartY = totalH * 0.5
+  for (let l = 0; l < 3; l++) {
+    const ly = lineStartY + l * 26 * S
+    ctx.strokeStyle = theme.dividerColor
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(panelX, ly)
+    ctx.lineTo(totalW - pad, ly)
+    ctx.stroke()
+  }
+
+  if (session.caption) {
+    ctx.fillStyle = theme.captionColor
+    ctx.font = `italic ${10 * S}px 'Courier New', monospace`
+    ctx.fillText(`"${session.caption}"`, panelX, lineStartY - 6 * S, panelW - 4 * S)
+  }
+  if (session.showDate) {
+    ctx.fillStyle = theme.dateColor
+    ctx.font = `${8.5 * S}px 'Courier New', monospace`
+    const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+    ctx.fillText(dateStr, panelX, lineStartY + 20 * S, panelW - 4 * S)
+  }
+  ctx.restore()
+}
+
+// ── OVERLAP 2 (Layered Duo: 1 large backdrop + 1 overlapping inset) ──────────
+async function generateOverlap2(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
+  const imgs = await Promise.all(session.photos.slice(0, 2).map(loadImage))
+  const pad = 24 * S
+  const bw = 5 * S
+  const titleH = 28 * S
+  const bigW = 360 * S, bigH = 270 * S
+  const insetW = 216 * S, insetH = 162 * S
+  const insetOffsetX = 186 * S
+  const insetOffsetY = 170 * S
+  const photosW = Math.max(bigW + bw * 2, insetOffsetX + insetW + bw * 2)
+  const photosH = Math.max(bigH + bw * 2, insetOffsetY + insetH + bw * 2)
+  const captionH = (session.caption ? 36 * S : 0) + (session.showDate ? 26 * S : 0)
+  const totalW = pad * 2 + photosW
+  const totalH = pad + titleH + photosH + captionH + pad
+  const borderStyle = session.borderStyle ?? 'classic'
+
+  canvas.width = totalW; canvas.height = totalH
+  const ctx = canvas.getContext('2d')!
+  drawThemeBackground(ctx, totalW, totalH, theme)
+  drawStripTitle(ctx, totalW, pad + titleH * 0.7, theme)
+
+  drawPhotoFramed(ctx, imgs[0], session.filter, pad + bw, pad + titleH + bw, bigW, bigH, bw, session.photoTransforms?.[0], borderStyle, theme.frameColor)
+  drawPhotoFramed(
+    ctx,
+    imgs[1],
+    session.filter,
+    pad + bw + insetOffsetX,
+    pad + titleH + bw + insetOffsetY,
+    insetW,
+    insetH,
+    bw + 1 * S,
+    session.photoTransforms?.[1],
+    borderStyle,
+    theme.frameColor
+  )
+  drawStripBottom(ctx, session.caption, session.showDate, totalW, pad + titleH + photosH + 4 * S, theme)
+}
+
+// ── BANNER 3 (1 wide top + 2 equal bottom) ───────────────────────────────────
+async function generateBanner3(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
+  const imgs = await Promise.all(session.photos.slice(0, 3).map(loadImage))
+  const pad = 22 * S, gap = 10 * S, bw = 5 * S
+  const titleH = 28 * S
+  const bigW = 430 * S, bigH = 215 * S
+  const smallW = 205 * S, smallH = 165 * S
+  const captionH = (session.caption ? 36 * S : 0) + (session.showDate ? 26 * S : 0)
+  const totalW = pad * 2 + bigW + bw * 2
+  const totalH = pad + titleH + bigH + bw * 2 + gap + smallH + bw * 2 + captionH + pad
+  const borderStyle = session.borderStyle ?? 'classic'
+
+  canvas.width = totalW; canvas.height = totalH
+  const ctx = canvas.getContext('2d')!
+  drawThemeBackground(ctx, totalW, totalH, theme)
+  drawStripTitle(ctx, totalW, pad + titleH * 0.7, theme)
+
+  drawPhotoFramed(ctx, imgs[0], session.filter, pad + bw, pad + titleH + bw, bigW, bigH, bw, session.photoTransforms?.[0], borderStyle, theme.frameColor)
+  const rowY = pad + titleH + bigH + bw * 2 + gap + bw
+  drawPhotoFramed(ctx, imgs[1], session.filter, pad + bw, rowY, smallW, smallH, bw, session.photoTransforms?.[1], borderStyle, theme.frameColor)
+  drawPhotoFramed(ctx, imgs[2], session.filter, pad + bw + smallW + bw * 2 + gap, rowY, smallW, smallH, bw, session.photoTransforms?.[2], borderStyle, theme.frameColor)
+  drawStripBottom(ctx, session.caption, session.showDate, totalW, rowY + smallH + bw, theme)
+}
+
+// ── TRIPTYCH 3 (3 tall vertical gallery windows side-by-side) ────────────────
+async function generateTriptych3(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
+  const imgs = await Promise.all(session.photos.slice(0, 3).map(loadImage))
+  const pad = 26 * S, gap = 14 * S, bw = 5 * S
+  const titleH = 28 * S
+  const photoW = 156 * S, photoH = 260 * S
+  const captionH = (session.caption ? 36 * S : 0) + (session.showDate ? 26 * S : 0)
+  const totalW = pad * 2 + photoW * 3 + bw * 6 + gap * 2
+  const totalH = pad + titleH + photoH + bw * 2 + captionH + pad
+  const borderStyle = session.borderStyle ?? 'classic'
+
+  canvas.width = totalW; canvas.height = totalH
+  const ctx = canvas.getContext('2d')!
+  drawThemeBackground(ctx, totalW, totalH, theme)
+  drawStripTitle(ctx, totalW, pad + titleH * 0.7, theme)
+
+  imgs.forEach((img, i) => {
+    const x = pad + bw + i * (photoW + bw * 2 + gap)
+    const y = pad + titleH + bw
+    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
+  })
+  drawStripBottom(ctx, session.caption, session.showDate, totalW, pad + titleH + photoH + bw * 2, theme)
+}
+
+// ── BENTO 4 (Asymmetric 2×2 Mosaic) ──────────────────────────────────────────
+async function generateBento4(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
+  const imgs = await Promise.all(session.photos.slice(0, 4).map(loadImage))
+  const pad = 22 * S, gap = 10 * S, bw = 5 * S
+  const titleH = 28 * S
+  const wideW = 280 * S, narrowW = 160 * S, rowH = 180 * S
+  const captionH = (session.caption ? 36 * S : 0) + (session.showDate ? 26 * S : 0)
+  const totalW = pad * 2 + wideW + narrowW + bw * 4 + gap
+  const totalH = pad + titleH + rowH * 2 + bw * 4 + gap + captionH + pad
+  const borderStyle = session.borderStyle ?? 'classic'
+
+  canvas.width = totalW; canvas.height = totalH
+  const ctx = canvas.getContext('2d')!
+  drawThemeBackground(ctx, totalW, totalH, theme)
+  drawStripTitle(ctx, totalW, pad + titleH * 0.7, theme)
+
+  const y1 = pad + titleH + bw
+  const y2 = y1 + rowH + bw * 2 + gap
+  const x0 = pad + bw
+
+  drawPhotoFramed(ctx, imgs[0], session.filter, x0, y1, wideW, rowH, bw, session.photoTransforms?.[0], borderStyle, theme.frameColor)
+  drawPhotoFramed(ctx, imgs[1], session.filter, x0 + wideW + bw * 2 + gap, y1, narrowW, rowH, bw, session.photoTransforms?.[1], borderStyle, theme.frameColor)
+  drawPhotoFramed(ctx, imgs[2], session.filter, x0, y2, narrowW, rowH, bw, session.photoTransforms?.[2], borderStyle, theme.frameColor)
+  drawPhotoFramed(ctx, imgs[3], session.filter, x0 + narrowW + bw * 2 + gap, y2, wideW, rowH, bw, session.photoTransforms?.[3], borderStyle, theme.frameColor)
+
+  drawStripBottom(ctx, session.caption, session.showDate, totalW, pad + titleH + rowH * 2 + bw * 4 + gap, theme)
+}
+
+// ── BOOKMARK 4 (Slim tall Life4Cuts portrait strip) ───────────────────────────
+async function generateBookmark4(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
+  const imgs = await Promise.all(session.photos.slice(0, 4).map(loadImage))
+  const padX = 22 * S, padY = 26 * S, gap = 10 * S, bw = 4 * S
+  const titleH = 34 * S
+  const photoW = 160 * S, photoH = 192 * S
+  const captionH = (session.caption ? 38 * S : 0) + (session.showDate ? 28 * S : 0)
+  const photosH = 4 * (photoH + bw * 2) + 3 * gap
+  const totalW = padX * 2 + photoW + bw * 2
+  const totalH = padY + titleH + photosH + captionH + padY
+  const borderStyle = session.borderStyle ?? 'classic'
+
+  canvas.width = totalW; canvas.height = totalH
+  const ctx = canvas.getContext('2d')!
+  drawThemeBackground(ctx, totalW, totalH, theme)
+  drawStripTitle(ctx, totalW, padY + titleH * 0.58, theme)
+
+  imgs.forEach((img, i) => {
+    const x = padX + bw
+    const y = padY + titleH + bw + i * (photoH + bw * 2 + gap)
+    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
+  })
+
+  drawStripBottom(ctx, session.caption, session.showDate, totalW, padY + titleH + photosH + 6 * S, theme)
+}
+
+// ── COLLAGE 6 (1 large hero + 5 highlight frames) ────────────────────────────
+async function generateCollage6(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
+  const imgs = await Promise.all(session.photos.slice(0, 6).map(loadImage))
+  const pad = 22 * S, gap = 10 * S, bw = 5 * S
+  const titleH = 28 * S
+  const bigW = 290 * S, bigH = 250 * S
+  const smallRightW = 135 * S
+  const smallRightH = (bigH - bw * 2 - gap) / 2 // 115 * S
+  const smallBotW = 135 * S
+  const smallBotH = 112 * S
+  const captionH = (session.caption ? 36 * S : 0) + (session.showDate ? 26 * S : 0)
+
+  const gridW = bigW + bw * 2 + gap + smallRightW + bw * 2 // 455 * S
+  const totalW = pad * 2 + gridW
+  const totalH = pad + titleH + bigH + bw * 2 + gap + smallBotH + bw * 2 + captionH + pad
+  const borderStyle = session.borderStyle ?? 'classic'
+
+  canvas.width = totalW; canvas.height = totalH
+  const ctx = canvas.getContext('2d')!
+  drawThemeBackground(ctx, totalW, totalH, theme)
+  drawStripTitle(ctx, totalW, pad + titleH * 0.7, theme)
+
+  const x0 = pad + bw
+  const y0 = pad + titleH + bw
+  drawPhotoFramed(ctx, imgs[0], session.filter, x0, y0, bigW, bigH, bw, session.photoTransforms?.[0], borderStyle, theme.frameColor)
+
+  const rx = x0 + bigW + bw * 2 + gap
+  drawPhotoFramed(ctx, imgs[1], session.filter, rx, y0, smallRightW, smallRightH, bw, session.photoTransforms?.[1], borderStyle, theme.frameColor)
+  drawPhotoFramed(ctx, imgs[2], session.filter, rx, y0 + smallRightH + bw * 2 + gap, smallRightW, smallRightH, bw, session.photoTransforms?.[2], borderStyle, theme.frameColor)
+
+  const botY = y0 + bigH + bw * 2 + gap
+  for (let i = 0; i < 3; i++) {
+    const bx = x0 + i * (smallBotW + bw * 2 + gap)
+    drawPhotoFramed(ctx, imgs[3 + i], session.filter, bx, botY, smallBotW, smallBotH, bw, session.photoTransforms?.[3 + i], borderStyle, theme.frameColor)
+  }
+
+  drawStripBottom(ctx, session.caption, session.showDate, totalW, botY + smallBotH + bw + 4 * S, theme)
+}
+
+// ── CONTACT 6 (Darkroom proof contact sheet with frame codes) ────────────────
+async function generateContact6(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
+  const imgs = await Promise.all(session.photos.slice(0, 6).map(loadImage))
+  const pad = 24 * S, gap = 14 * S, rowExtra = 18 * S, bw = 4 * S
+  const titleH = 30 * S
+  const photoW = 196 * S, photoH = 147 * S
+  const captionH = (session.caption ? 36 * S : 0) + (session.showDate ? 26 * S : 0)
+  const totalW = pad * 2 + photoW * 3 + bw * 6 + gap * 2
+  const totalH = pad + titleH + photoH * 2 + bw * 4 + gap + rowExtra * 2 + captionH + pad
+  const borderStyle = session.borderStyle ?? 'classic'
+
+  canvas.width = totalW; canvas.height = totalH
+  const ctx = canvas.getContext('2d')!
+  drawThemeBackground(ctx, totalW, totalH, theme)
+  drawStripTitle(ctx, totalW, pad + titleH * 0.65, theme)
+
+  imgs.forEach((img, i) => {
+    const col = i % 3
+    const row = Math.floor(i / 3)
+    const x = pad + bw + col * (photoW + bw * 2 + gap)
+    const y = pad + titleH + bw + row * (photoH + bw * 2 + gap + rowExtra)
+    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
+
+    ctx.save()
+    ctx.fillStyle = theme.dateColor
+    ctx.font = `bold ${8 * S}px 'Courier New', monospace`
+    ctx.textAlign = 'left'
+    ctx.fillText(`JLY-0${i + 1}A`, x, y + photoH + bw + 12 * S)
+    ctx.textAlign = 'right'
+    ctx.fillText('ISO 400', x + photoW, y + photoH + bw + 12 * S)
+    ctx.restore()
+  })
+
+  drawStripBottom(ctx, session.caption, session.showDate, totalW, pad + titleH + (photoH + bw * 2 + rowExtra) * 2 + gap - 4 * S, theme)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1283,20 +1800,30 @@ export async function generatePhotoboothCanvas(
   switch (layout) {
     case 'classic':           await generateClassic(session, canvas, theme, false); break
     case 'classic_land':      await generateClassic(session, canvas, theme, true); break
+    case 'wide_strip':        await generateWideStrip(session, canvas, theme); break
+    case 'double_cut':        await generateDoubleCut(session, canvas, theme); break
+    case 'postcard':          await generatePostcard(session, canvas, theme); break
     case 'filmstrip':         await generateFilmstrip(session, canvas, theme, false); break
     case 'filmstrip_land':    await generateFilmstrip(session, canvas, theme, true); break
     case 'twostrip':          await generateTwostrip(session, canvas, theme, false); break
     case 'twostrip_land':     await generateTwostrip(session, canvas, theme, true); break
+    case 'overlap_2':         await generateOverlap2(session, canvas, theme); break
     case 'threestrip':        await generateThreestrip(session, canvas, theme, false); break
     case 'threestrip_land':   await generateThreestrip(session, canvas, theme, true); break
     case 'layout_h':          await generateLayoutH(session, canvas, theme); break
+    case 'banner_3':          await generateBanner3(session, canvas, theme); break
+    case 'triptych_3':        await generateTriptych3(session, canvas, theme); break
     case 'grid_4':            await generateGrid4(session, canvas, theme, false); break
     case 'grid_4_land':       await generateGrid4(session, canvas, theme, true); break
+    case 'bento_4':           await generateBento4(session, canvas, theme); break
+    case 'bookmark_4':        await generateBookmark4(session, canvas, theme); break
     case 'layout_e':          await generateLayoutE(session, canvas, theme); break
     case 'layout_9':          await generateLayout9(session, canvas, theme); break
     case 'layout_3':          await generateLayout3(session, canvas, theme, false); break
     case 'layout_3_land':     await generateLayout3(session, canvas, theme, true); break
     case 'grid_6':            await generateGrid6(session, canvas, theme); break
+    case 'collage_6':         await generateCollage6(session, canvas, theme); break
+    case 'contact_6':         await generateContact6(session, canvas, theme); break
     case 'polaroid_2':
     case 'polaroid_3':
     case 'polaroid_4':        await generatePolaroid(session, canvas, theme); break

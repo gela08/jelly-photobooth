@@ -652,7 +652,7 @@ export default function CameraBooth({
         <div
           className={`relative w-full max-w-full overflow-hidden rounded-sm transition-all duration-300 ${
             isPortraitCamera ? 'aspect-[3/4] max-h-[60dvh]' : 'aspect-[4/3] max-h-[58dvh]'
-          } sm:max-h-none sm:aspect-[16/9] lg:aspect-[5/3] md:w-[115%] md:max-w-none md:-ml-[7.5%] lg:w-[130%] lg:-ml-[15%] viewfinder-fullscreen-expand`}
+          } sm:max-h-none sm:aspect-[16/9] lg:aspect-[5/3] lg:w-[120%] lg:max-w-none lg:-ml-[10%] viewfinder-fullscreen-expand`}
           style={{ background: 'var(--film-dark)' }}
         >
           <video
@@ -774,7 +774,7 @@ export default function CameraBooth({
         <canvas ref={canvasRef} className="hidden" aria-hidden="true" />
 
         {/* Thumbnail strip & controls (responsive: stacked cleanly on mobile, single row on sm+) */}
-        <div className="flex flex-col sm:flex-row sm:items-stretch gap-2.5 sm:gap-2 w-full md:w-[115%] md:-ml-[7.5%] lg:w-[130%] lg:-ml-[15%]">
+        <div className="flex flex-col sm:flex-row sm:items-stretch gap-2.5 sm:gap-2 w-full lg:w-[120%] lg:-ml-[10%]">
           {phase === 'ready' && (
             <button onClick={onCancel}
               className="hidden sm:flex items-center justify-center gap-2 font-display text-xs tracking-widest uppercase py-3 px-4 flex-shrink-0 transition-all active:scale-95"
@@ -884,7 +884,7 @@ export default function CameraBooth({
         {/* Optional Live Motion & Mic Controls when Ready */}
         {phase === 'ready' && (onLiveCaptureToggle || onAudioToggle) && (
           <div
-            className="w-full md:w-[115%] md:-ml-[7.5%] lg:w-[130%] lg:-ml-[15%] px-3 py-2.5 rounded-sm flex flex-wrap items-center justify-between gap-2"
+            className="w-full lg:w-[120%] lg:-ml-[10%] px-3 py-2.5 rounded-sm flex flex-wrap items-center justify-between gap-2"
             style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
           >
             <div className="flex items-center gap-2 min-w-0">

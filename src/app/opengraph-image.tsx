@@ -58,7 +58,7 @@ export default function OpenGraphImage() {
               maxWidth: 960,
             }}
           >
-            16 Film Filters · 22 Layouts · Custom Meme Stickers · Virtual Print Dispenser · iOS Live Strip GIFs &amp; Video
+            16 Film Filters · 32 Layouts · 25+ Strip Colors · Custom Meme Stickers · Live Strip GIFs &amp; Video
           </div>
         </div>
 

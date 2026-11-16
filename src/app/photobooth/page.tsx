@@ -227,6 +227,7 @@ function CustomizeStep({
   showDate,
   stickers,
   stripTheme,
+  customStripColor,
   borderStyle,
   stripDecoration,
   onTransformChange,
@@ -237,6 +238,7 @@ function CustomizeStep({
   onDateToggle,
   onStickersChange,
   onThemeChange,
+  onCustomColorChange,
   onBorderChange,
   onDecorationChange,
   onBack,
@@ -251,6 +253,7 @@ function CustomizeStep({
   showDate: boolean
   stickers: PlacedSticker[]
   stripTheme: StripThemeId
+  customStripColor: string
   borderStyle: StripBorderStyle
   stripDecoration: StripDecoration
   onTransformChange: (index: number, next: PhotoTransform) => void
@@ -261,6 +264,7 @@ function CustomizeStep({
   onDateToggle: () => void
   onStickersChange: (next: PlacedSticker[]) => void
   onThemeChange: (id: StripThemeId) => void
+  onCustomColorChange: (hex: string) => void
   onBorderChange: (style: StripBorderStyle) => void
   onDecorationChange: (dec: StripDecoration) => void
   onBack: () => void
@@ -279,6 +283,7 @@ function CustomizeStep({
     poseCount,
     stickers,
     stripTheme,
+    customStripColor,
     borderStyle,
     stripDecoration,
   }
@@ -335,13 +340,15 @@ function CustomizeStep({
         />
       </div>
 
-      {/* Strip Design System (Theme, Borders, Corner Accents) */}
+      {/* Strip Design System (Theme, Colors, Borders, Corner Accents) */}
       <div className="section-card">
         <StripDesignSelector
           stripTheme={stripTheme}
+          customStripColor={customStripColor}
           borderStyle={borderStyle}
           stripDecoration={stripDecoration}
           onThemeChange={onThemeChange}
+          onCustomColorChange={onCustomColorChange}
           onBorderChange={onBorderChange}
           onDecorationChange={onDecorationChange}
         />
@@ -695,6 +702,7 @@ export default function PhotoboothPage() {
   const [photoTransforms, setPhotoTransforms] = useState<PhotoTransform[]>([])
   const [stickers, setStickers] = useState<PlacedSticker[]>([])
   const [stripTheme, setStripTheme] = useState<StripThemeId>('auto')
+  const [customStripColor, setCustomStripColor] = useState<string>('#e8d5c4')
   const [borderStyle, setBorderStyle] = useState<StripBorderStyle>('classic')
   const [stripDecoration, setStripDecoration] = useState<StripDecoration>('none')
   const [liveCaptureEnabled, setLiveCaptureEnabled] = useState(true)
@@ -767,6 +775,7 @@ export default function PhotoboothPage() {
     poseCount,
     stickers,
     stripTheme,
+    customStripColor,
     borderStyle,
     stripDecoration,
     liveFramesPerPose: sessionVideo?.liveFramesPerPose,
@@ -838,6 +847,7 @@ export default function PhotoboothPage() {
               showDate={showDate}
               stickers={stickers}
               stripTheme={stripTheme}
+              customStripColor={customStripColor}
               borderStyle={borderStyle}
               stripDecoration={stripDecoration}
               onTransformChange={handleTransformChange}
@@ -848,6 +858,7 @@ export default function PhotoboothPage() {
               onDateToggle={() => setShowDate((d) => !d)}
               onStickersChange={setStickers}
               onThemeChange={setStripTheme}
+              onCustomColorChange={setCustomStripColor}
               onBorderChange={setBorderStyle}
               onDecorationChange={setStripDecoration}
               onBack={() => {

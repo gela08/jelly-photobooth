@@ -27,15 +27,15 @@ export const metadata: Metadata = {
 const FAQS = [
   {
     q: "Is Jelly's Photobooth free and do I need an account?",
-    a: "Yes. Both Solo Photobooth and Remote Duo modes are completely free to use in your browser with no sign-up, login, or watermark required.",
+    a: "Yes. Jelly's Photobooth is completely free to use in your browser with no sign-up, login, or watermark required.",
   },
   {
     q: 'Are my photos uploaded or stored on a server?',
-    a: 'In Solo Photobooth mode, 100% of your camera frames, filters, Live Strip GIFs, and video recordings stay strictly on your device in browser memory. In Remote Duo mode, live video travels via WebRTC and session frames pass ephemerally through volatile server memory only to sync the two participants—zero photos are ever saved to a database or disk.',
+    a: 'In Solo Photobooth mode, 100% of your camera frames, filters, Live Strip GIFs, and video recordings stay strictly on your device in browser memory with zero server uploads.',
   },
   {
-    q: 'How does Remote Duo mode work with a friend in another location?',
-    a: 'Open Remote Duo, create a private 6-character room, and share the invite link with one friend. You see each other live side by side, trigger synchronized countdown captures, co-edit filters, themes, and stickers in real time, and export Side-by-Side, Stacked, or Twin Parallel photo strips.',
+    q: 'When will Remote Duo mode be available?',
+    a: 'Remote Duo live private rooms are currently under construction while we upgrade cross-device room sync and video performance. Check the Remote Duo page for upcoming features—in the meantime, Solo Photobooth is live with all 32 layouts and 25+ colors.',
   },
   {
     q: 'Can I upload my own meme stickers and create iOS Live Photo GIF strips?',
@@ -83,8 +83,8 @@ const features = [
         <path d="M12 2l2.9 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14 2 9.27l7.1-1.01L12 2z"/>
       </svg>
     ),
-    title: 'Strip Designs & Meme Stickers',
-    desc: '9 strip themes (Y2K Checker, Gingham, Midnight Stars, Kraft), 4 border styles, drag/rotate stickers, and your own uploaded meme stickers.',
+    title: 'Strip Colors, Themes & Stickers',
+    desc: '25+ strip colors & patterns (Studio White, Buttercream, Lavender, Cobalt, Cherry, Polka, Pinstripe, Gingham) plus custom color picker & meme stickers.',
   },
   {
     icon: (
@@ -113,8 +113,8 @@ const features = [
         <path d="M15.54 8.46a5 5 0 0 1 0 7.07M8.46 8.46a5 5 0 0 0 0 7.07"/>
       </svg>
     ),
-    title: '16 Film Filters & 22 Layouts',
-    desc: 'Preview Antique, B&W, Noir, Y2K, Sunburn, and Pinky live—then arrange 2, 3, 4, or 6 poses in strips, grids, or polaroids.',
+    title: '16 Film Filters & 32 Layouts',
+    desc: 'Includes Double Cut (2×), Archival Postcard, Bento Mosaic, Wide Strip, Slim Booth, Highlight 1+5, Proof Sheet, Filmstrips, and Polaroids.',
   },
   {
     icon: (
@@ -123,8 +123,8 @@ const features = [
         <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
       </svg>
     ),
-    title: 'Remote Duo Synchronized Booth',
-    desc: 'Open a private 6-character room, invite a friend from anywhere, pose together on synchronized timers, and co-edit Side-by-Side or Twin Strips.',
+    title: 'Remote Duo Booth · Coming Soon',
+    desc: 'Currently upgrading live two-person room sync and cross-device camera streaming so you can soon pose together from anywhere.',
   },
 ]
 
@@ -135,13 +135,13 @@ export default function HomePage() {
     '@type': 'HowTo',
     name: "How to take and customize photo strips in Jelly's Photobooth",
     description:
-      'Capture, frame, decorate with stickers and themes, and export solo or Remote Duo photo strips right in your browser.',
+      'Capture, frame, decorate with stickers, custom colors, and themes, and export photo strips right in your browser.',
     step: [
       {
         '@type': 'HowToStep',
         position: 1,
-        name: 'Choose Mode & Set Up',
-        text: 'Pick Solo Photobooth (/photobooth) or Remote Duo (/duo), select 2, 3, 4, or 6 poses, countdown timer, and optional Live Motion.',
+        name: 'Choose Poses & Layout',
+        text: 'Open Solo Photobooth (/photobooth), select 2, 3, 4, or 6 poses, pick from 32 photostrip layouts, countdown timer, and optional Live Motion.',
         url: `${siteUrl}/photobooth`,
       },
       {
@@ -154,7 +154,7 @@ export default function HomePage() {
         '@type': 'HowToStep',
         position: 3,
         name: 'Customize & Add Stickers',
-        text: 'Adjust pan and zoom framing per pose, apply any of 16 film filters, pick from 22 layouts and 9 strip themes, and place custom or built-in stickers.',
+        text: 'Adjust pan and zoom framing per pose, apply any of 16 film filters, pick from 25+ strip colors & patterns or a custom color, and place stickers.',
       },
       {
         '@type': 'HowToStep',
@@ -179,7 +179,7 @@ export default function HomePage() {
   }
 
   return (
-    <div className="min-h-screen film-grain select-none" style={{ background: 'var(--cream)' }}>
+    <div className="min-h-screen overflow-x-hidden film-grain select-none" style={{ background: 'var(--cream)' }}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify([howToJsonLd, faqJsonLd]) }}
@@ -191,21 +191,21 @@ export default function HomePage() {
         <section className="max-w-4xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center">
           <div className="stagger-children">
             <p className="font-display text-xs tracking-[0.4em] uppercase mb-4" style={{ color: 'var(--sepia)' }}>
-              ✦ Browser-based · Solo &amp; Remote Duo · Free
+              ✦ Browser-based · Free · No Account Needed
             </p>
             <h1
               className="font-display text-4xl sm:text-6xl font-bold leading-tight tracking-tight mb-6"
-              style={{ color: 'var(--vintage-brown)' }}
+              style={{ color: 'var(--vintage-brown)', textWrap: 'balance' }}
             >
               Capture Memories<br />in Film
             </h1>
             <p className="text-base sm:text-lg leading-relaxed max-w-2xl mx-auto mb-10 font-body" style={{ color: 'var(--warm-gray)' }}>
-              A vintage photobooth studio in your browser. Snap solo strips privately on your device or invite a friend into a synchronized Remote Duo room—with custom meme stickers, themed borders, virtual print dispensing, and animated Live Strip GIFs.
+              A vintage photobooth studio in your browser. Snap solo strips privately on your device with 32 strip layouts, 25+ colors &amp; custom hex tinting, meme stickers, virtual print dispensing, and animated Live Strip GIFs—plus Remote Duo upgrading soon.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5">
               <Link
                 href="/photobooth"
-                className="inline-flex items-center justify-center gap-3 font-display text-sm tracking-widest uppercase px-8 py-5 transition-all active:scale-95 shadow-lg hover:shadow-xl w-full sm:w-auto"
+                className="inline-flex items-center justify-center gap-3 font-display text-sm tracking-widest uppercase px-8 py-5 transition-all active:scale-95 shadow-lg hover:shadow-xl w-full sm:w-auto whitespace-nowrap"
                 style={{ background: 'var(--vintage-brown)', color: 'var(--cream)' }}
               >
                 <CameraIcon />
@@ -213,11 +213,11 @@ export default function HomePage() {
               </Link>
               <Link
                 href="/duo"
-                className="inline-flex items-center justify-center gap-3 font-display text-sm tracking-widest uppercase px-8 py-5 transition-all active:scale-95 shadow-md hover:shadow-lg w-full sm:w-auto"
+                className="inline-flex items-center justify-center gap-3 font-display text-sm tracking-widest uppercase px-8 py-5 transition-all active:scale-95 shadow-md hover:shadow-lg w-full sm:w-auto whitespace-nowrap"
                 style={{ background: 'var(--surface)', color: 'var(--vintage-brown)', border: '1px solid var(--border)' }}
               >
                 <DuoIcon />
-                Remote Duo
+                Remote Duo · Coming Soon
               </Link>
             </div>
           </div>
@@ -231,10 +231,10 @@ export default function HomePage() {
           <div className="max-w-4xl mx-auto px-4 sm:px-6">
             <div className="text-center mb-10">
               <p className="font-display text-xs tracking-[0.35em] uppercase mb-2" style={{ color: 'var(--sepia)' }}>
-                Two Ways to Shoot
+                Booth Modes
               </p>
               <h2 className="font-display text-2xl sm:text-3xl font-bold" style={{ color: 'var(--vintage-brown)' }}>
-                Solo Privacy or Together Anywhere
+                Shoot Solo Today · Duo Upgrading
               </h2>
             </div>
 
@@ -242,13 +242,13 @@ export default function HomePage() {
               <div className="section-card flex flex-col justify-between gap-4">
                 <div>
                   <span className="font-display text-[10px] tracking-[0.25em] uppercase" style={{ color: 'var(--sepia)' }}>
-                    Mode 01 · 100% On-Device
+                    Mode 01 · 100% On-Device · Live
                   </span>
                   <h3 className="font-display text-xl font-bold mt-1 mb-2" style={{ color: 'var(--vintage-brown)' }}>
                     Solo Photobooth
                   </h3>
                   <p className="font-body text-sm leading-relaxed" style={{ color: 'var(--warm-gray)' }}>
-                    Everything happens strictly inside your browser with zero server uploads. Includes optional session video recording, Live Photo GIF strips, custom sticker uploads, and virtual booth printing.
+                    Everything happens strictly inside your browser with zero server uploads. Now with 32 strip layouts, 25+ colors &amp; custom color tinting, meme stickers, Live Photo GIF strips, and virtual printing.
                   </p>
                 </div>
                 <Link
@@ -264,22 +264,22 @@ export default function HomePage() {
               <div className="section-card flex flex-col justify-between gap-4">
                 <div>
                   <span className="font-display text-[10px] tracking-[0.25em] uppercase" style={{ color: 'var(--sepia)' }}>
-                    Mode 02 · Live Sync Room
+                    Mode 02 · Under Construction · Upgrading
                   </span>
                   <h3 className="font-display text-xl font-bold mt-1 mb-2" style={{ color: 'var(--vintage-brown)' }}>
                     Remote Duo Booth
                   </h3>
                   <p className="font-body text-sm leading-relaxed" style={{ color: 'var(--warm-gray)' }}>
-                    Create a private 6-character room link for two people. See each other live via WebRTC, shoot on one synchronized countdown, co-customize strips in real time, and export Side-by-Side, Stacked, or Twin Strips.
+                    Private two-person rooms are currently under construction while we upgrade cross-device live streaming and room synchronization. Coming soon!
                   </p>
                 </div>
                 <Link
                   href="/duo"
                   className="inline-flex items-center justify-center gap-2 font-display text-xs tracking-widest uppercase py-3.5 px-5 rounded-sm transition-all active:scale-95"
-                  style={{ background: 'var(--sepia)', color: 'var(--cream)' }}
+                  style={{ background: 'var(--surface-3)', color: 'var(--vintage-brown)', border: '1px solid var(--border)' }}
                 >
                   <DuoIcon />
-                  Start Remote Duo
+                  Upgrading · View Details
                 </Link>
               </div>
             </div>
@@ -326,7 +326,7 @@ export default function HomePage() {
                 Four Simple Steps
               </h2>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-5">
               {[
                 { n: '1', label: 'Set Up', desc: 'Pick Solo or Remote Duo, poses, countdown & Live Motion options' },
                 { n: '2', label: 'Shoot', desc: 'Synced countdown captures crisp stills plus optional Live bursts & video' },
@@ -433,7 +433,7 @@ export default function HomePage() {
         </section>
 
         {/* CTA */}
-        <section className="text-center px-4 pb-16 sm:pb-24">
+        <section className="text-center px-4 pt-14 sm:pt-16 pb-16 sm:pb-24">
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5">
             <Link
               href="/photobooth"
@@ -445,15 +445,15 @@ export default function HomePage() {
             </Link>
             <Link
               href="/duo"
-              className="inline-flex items-center justify-center gap-3 font-display text-sm tracking-widest uppercase px-8 py-5 transition-all active:scale-95 shadow-md w-full sm:w-auto"
+              className="inline-flex items-center justify-center gap-3 font-display text-sm tracking-widest uppercase px-8 py-5 transition-all active:scale-95 shadow-md w-full sm:w-auto whitespace-nowrap"
               style={{ background: 'var(--surface)', color: 'var(--vintage-brown)', border: '1px solid var(--border)' }}
             >
               <DuoIcon />
-              Try Remote Duo
+              Remote Duo · Coming Soon
             </Link>
           </div>
           <p className="mt-4 text-xs font-body" style={{ color: 'var(--text-muted)' }}>
-            No account required. Capture solo or pose together from anywhere.
+            No account required. Capture solo right now — Remote Duo rooms coming soon.
           </p>
         </section>
       </main>

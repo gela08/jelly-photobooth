@@ -5,6 +5,7 @@ import next from 'next'
 import { WebSocketServer, WebSocket } from 'ws'
 
 const dev = process.env.NODE_ENV !== 'production'
+const wsOnly = process.env.WS_ONLY === 'true'
 const hostname = '0.0.0.0'
 const port = Number(process.env.PORT || 3000)
 
@@ -319,40 +320,56 @@ setInterval(() => {
 
 appPrepare()
 
-function appPrepare() {
-  const app = next({ dev, hostname, port })
-  const handle = app.getRequestHandler()
+async function appPrepare() {
+  let handle: ReturnType<ReturnType<typeof next>['getRequestHandler']> | null = null
+  let nextUpgradeHandler: ((req: http.IncomingMessage, socket: Socket, head: Buffer) => void) | undefined
 
-  app.prepare().then(() => {
-    const server = http.createServer((req, res) => {
-      const parsedUrl = parse(req.url || '/', true)
-      handle(req, res, parsedUrl)
-    })
-
-    const wss = new WebSocketServer({
-      noServer: true,
-      maxPayload: 12 * 1024 * 1024,
-    })
-
-    server.on('upgrade', (req, socket, head) => {
-      const parsedUrl = parse(req.url || '/', true)
-      if (parsedUrl.pathname === '/api/duo-ws') {
-        wss.handleUpgrade(req, socket as Socket, head, (ws) => {
-          wss.emit('connection', ws, req)
-        })
-        return
+  if (!wsOnly) {
+    const app = next({ dev, hostname, port })
+    handle = app.getRequestHandler()
+    await app.prepare()
+    nextUpgradeHandler = (
+      app as unknown as {
+        getUpgradeHandler?: () => (req: http.IncomingMessage, socket: Socket, head: Buffer) => void
       }
+    ).getUpgradeHandler?.()
+  }
 
-      const nextUpgradeHandler = (
-        app as unknown as {
-          getUpgradeHandler?: () => (req: http.IncomingMessage, socket: Socket, head: Buffer) => void
-        }
-      ).getUpgradeHandler?.()
-
-      if (nextUpgradeHandler) {
-        nextUpgradeHandler(req, socket as Socket, head)
+  const server = http.createServer((req, res) => {
+    const parsedUrl = parse(req.url || '/', true)
+    if (wsOnly) {
+      if (parsedUrl.pathname === '/' || parsedUrl.pathname === '/health' || parsedUrl.pathname === '/api/duo-health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: true, service: 'jelly-duo-ws', activeRooms: rooms.size }))
+      } else {
+        res.writeHead(404, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: false, error: 'Not found' }))
       }
-    })
+      return
+    }
+    void handle?.(req, res, parsedUrl)
+  })
+
+  const wss = new WebSocketServer({
+    noServer: true,
+    maxPayload: 12 * 1024 * 1024,
+  })
+
+  server.on('upgrade', (req, socket, head) => {
+    const parsedUrl = parse(req.url || '/', true)
+    if (parsedUrl.pathname === '/api/duo-ws' || (wsOnly && parsedUrl.pathname === '/')) {
+      wss.handleUpgrade(req, socket as Socket, head, (ws) => {
+        wss.emit('connection', ws, req)
+      })
+      return
+    }
+
+    if (nextUpgradeHandler) {
+      nextUpgradeHandler(req, socket as Socket, head)
+    } else {
+      socket.destroy()
+    }
+  })
 
     wss.on('connection', (ws) => {
       ws.on('message', (raw) => {
@@ -730,7 +747,10 @@ function appPrepare() {
     })
 
     server.listen(port, hostname, () => {
-      console.log(`> Jelly's Photobooth ready on http://${hostname}:${port}`)
+      console.log(
+        wsOnly
+          ? `> Jelly's Duo WebSocket Relay ready on ws://${hostname}:${port}/api/duo-ws`
+          : `> Jelly's Photobooth ready on http://${hostname}:${port}`
+      )
     })
-  })
 }

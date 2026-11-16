@@ -1,9 +1,9 @@
 import type { Metadata } from 'next'
-import DuoBoothSession from '@/components/duo/DuoBoothSession'
+import DuoComingSoon from '@/components/duo/DuoComingSoon'
 
-const title = "Remote Duo Photobooth Rooms | Jelly's Photobooth"
+const title = "Remote Duo Photobooth (Upgrading) | Jelly's Photobooth"
 const description =
-  'Create a private room link, pose live via camera with a friend anywhere, and co-design Side-by-Side or Twin photobooth strips synced in real time.'
+  "Remote Duo private rooms are currently upgrading and coming soon. Try Solo Photobooth in your browser with 32 strip layouts, custom colors, stickers, and Live GIFs."
 
 export const metadata: Metadata = {
   title,
@@ -26,12 +26,6 @@ export const metadata: Metadata = {
   },
 }
 
-export default async function DuoPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ room?: string }>
-}) {
-  const resolved = await searchParams
-  const room = typeof resolved?.room === 'string' ? resolved.room : ''
-  return <DuoBoothSession initialRoomCode={room} />
+export default function DuoPage() {
+  return <DuoComingSoon />
 }

@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Jelly's Photobooth",
     short_name: "Jelly's PB",
     description:
-      'Browser-based vintage photobooth with Solo Mode, Remote Duo rooms, 16 film filters, custom stickers, and Live Strip GIF exports.',
+      'Browser-based vintage photobooth with Solo Mode, 32 layouts, 25+ strip colors & custom hex picker, 16 film filters, custom stickers, and Live Strip GIF exports. Remote Duo upgrading.',
     start_url: '/',
     display: 'standalone',
     background_color: '#f5f0e8',

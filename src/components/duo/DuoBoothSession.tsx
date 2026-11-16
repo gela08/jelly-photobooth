@@ -53,6 +53,7 @@ export default function DuoBoothSession({ initialRoomCode = '' }: { initialRoomC
   const {
     clientId,
     wsConnected,
+    wsConnecting,
     room,
     myRole,
     shots,
@@ -238,6 +239,9 @@ export default function DuoBoothSession({ initialRoomCode = '' }: { initialRoomC
     }
   }, [room, shots, hostParticipant?.name, guestParticipant?.name])
 
+  const duoSpecRef = useRef(duoSpec)
+  duoSpecRef.current = duoSpec
+
   // Render combined strip preview cleanly when in customizing or export
   const renderDuoPreview = useCallback(async () => {
     if (!duoSpec || room?.phase !== 'customizing') return
@@ -311,15 +315,17 @@ export default function DuoBoothSession({ initialRoomCode = '' }: { initialRoomC
   }, [localView, printerDone, hasDuoBurstFrames, isEncodingDuoGif, buildDuoGif])
 
   // Render base canvas callback for StickerEditor (without stickers)
+  // Uses duoSpecRef so dragging stickers does not invalidate the callback and re-compose the base backdrop
   const renderStickerBackdrop = useCallback(async () => {
-    if (!duoSpec) {
+    const spec = duoSpecRef.current
+    if (!spec) {
       const c = document.createElement('canvas')
       c.width = 400
       c.height = 600
       return c
     }
-    return generateDuoPhotoboothCanvas(duoSpec, { includeStickers: false, pairTargetWidth: 640 })
-  }, [duoSpec])
+    return generateDuoPhotoboothCanvas(spec, { includeStickers: false, pairTargetWidth: 640 })
+  }, [])
 
   const stickerRenderKey = useMemo(() => {
     if (!room) return ''
@@ -406,7 +412,7 @@ export default function DuoBoothSession({ initialRoomCode = '' }: { initialRoomC
   )
 
   return (
-    <div className="min-h-screen film-grain" style={{ background: 'var(--cream)' }}>
+    <div className="min-h-screen overflow-x-hidden film-grain" style={{ background: 'var(--cream)' }}>
       <Nav insideBooth={Boolean(room)} onLeaveConfirm={leaveRoom} />
 
       {/* Enlarge single photo modal */}
@@ -507,11 +513,12 @@ export default function DuoBoothSession({ initialRoomCode = '' }: { initialRoomC
                 </div>
                 <button
                   type="button"
+                  disabled={wsConnecting}
                   onClick={() => createRoom(displayName || 'Host')}
-                  className="w-full font-display text-xs tracking-widest uppercase py-4 rounded-sm transition-all active:scale-95 shadow-md"
+                  className="w-full font-display text-xs tracking-widest uppercase py-4 rounded-sm transition-all active:scale-95 disabled:opacity-60 shadow-md"
                   style={{ background: 'var(--vintage-brown)', color: 'var(--cream)' }}
                 >
-                  Create Private Room
+                  {wsConnecting ? 'Connecting…' : 'Create Private Room'}
                 </button>
               </div>
 
@@ -544,11 +551,11 @@ export default function DuoBoothSession({ initialRoomCode = '' }: { initialRoomC
                 <button
                   type="button"
                   onClick={() => joinRoom(joinCodeInput, displayName || 'Partner')}
-                  disabled={!joinCodeInput.trim()}
+                  disabled={!joinCodeInput.trim() || wsConnecting}
                   className="w-full font-display text-xs tracking-widest uppercase py-4 rounded-sm transition-all active:scale-95 disabled:opacity-45"
                   style={{ background: 'var(--sepia)', color: 'var(--cream)' }}
                 >
-                  Join Room
+                  {wsConnecting ? 'Connecting…' : 'Join Room'}
                 </button>
               </div>
             </div>
@@ -839,7 +846,7 @@ export default function DuoBoothSession({ initialRoomCode = '' }: { initialRoomC
                         <p className="font-display text-[10px] tracking-widest uppercase mb-2" style={{ color: 'var(--text-secondary)' }}>
                           Duo Frame Style
                         </p>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                           {COMPOSE_MODE_OPTIONS.map((opt) => (
                             <button
                               key={opt.id}
@@ -1079,7 +1086,7 @@ export default function DuoBoothSession({ initialRoomCode = '' }: { initialRoomC
                           <h3 className="font-display text-xs tracking-widest uppercase" style={{ color: 'var(--text-secondary)' }}>
                             Duo Arrangement
                           </h3>
-                          <div className="grid grid-cols-3 gap-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                             {COMPOSE_MODE_OPTIONS.map((opt) => (
                               <button
                                 key={opt.id}
@@ -1304,7 +1311,7 @@ export default function DuoBoothSession({ initialRoomCode = '' }: { initialRoomC
             {/* ── PHASE: EXPORT & BOOTH PRINTER ANIMATION ─────────────────────── */}
             {room.phase === 'customizing' && localView === 'export' && (
               <div className="max-w-2xl mx-auto space-y-6 animate-fade-in-up">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h2 className="font-display text-2xl font-bold" style={{ color: 'var(--vintage-brown)' }}>
                       Your Remote Duo Strip

@@ -1,23 +1,22 @@
 # Jelly's Photobooth
 
-> A free, browser-based vintage photobooth studio developed by Angela Gardan featuring offline-private Solo Photobooth strips and live synchronized Remote Duo rooms.
+> A free, browser-based vintage photobooth studio developed by Angela Gardan featuring offline-private Solo Photobooth strips, 32 layouts, 25+ strip colors & custom hex picker, and Remote Duo (currently upgrading / coming soon).
 
 ## Core Modes
 - **Solo Photobooth** (`/photobooth`): 100% client-side in-browser photobooth. No account, no photo uploads, no tracking.
-- **Remote Duo Booth** (`/duo`): Ephemeral two-participant real-time synchronized photobooth using 6-character private room codes, invite links (`/duo?room=CODE`), WebRTC peer-to-peer camera streams (with automatic live relay fallback), synchronized server countdowns, shared real-time editing, and Side-by-Side, Stacked, or Twin Parallel Strips.
+- **Remote Duo Booth** (`/duo`): Currently **Under Construction / Upgrading (Coming Soon)** while WebSocket & relay rooms are rebuilt for multi-region reliability.
 
 ## Studio Capabilities
 - **16 Film Filters**: Original, Antique, B&W, Warm Retro, Film Grain, Faded, Cool Tone, Golden Hour, Noir, Dreamy, Lomo, 90s Vibes, Y2K, Sunburn, Matte, Pinky.
-- **22 Layouts**: Classic Strip (portrait & landscape), Film Strip with sprocket holes, Duo Strip, Triple Strip, Polaroids (2/3/4), Diagonal, 2x2 Grid, 2x3 / 3x2 Grids, and Feature Layouts.
+- **32 Layouts**: Classic Strip (portrait & landscape), Film Strip with sprocket holes, Duo Strip, Triple Strip, Polaroids (2/3/4), Diagonal, 2x2 Grid, 2x3 / 3x2 Grids, Feature Layouts, Wide Strip, Double Cut (2x), Postcard, Layered Duo, Top Banner, Tall Triptych, Bento Mosaic, Slim Booth, Highlight 1+5, and Proof Sheet.
 - **Interactive Framing**: Individual pan, drag, pinch, and zoom inside every photo slot (`PhotoFrameEditor`).
-- **Strip Design & Custom Stickers**: 9 strip themes (including Y2K Checker, Gingham Picnic, Midnight Stars, Kraft Scrapbook, Pastel Pink, Mint Retro), 4 frame border styles, 5 corner decorations, draggable/scalable/rotatable stickers, custom uploaded meme stickers persisted locally in `localStorage`, and `1 by 1` or `4x Scatter` placement.
+- **Strip Design & Custom Stickers**: 25 curated strip colors & patterns (Studio White, Rose Quartz, Butter Yellow, Lavender Milk, Baby Blue, Sage Matcha, Cobalt Studio, Cherry Velvet, Espresso Roast, Matcha Dark, Peach Sorbet, Cotton Candy, Silver Chrome, Sky Gingham, Polka Cream, Mocha Stripe, Y2K Checker, Gingham Picnic, Midnight Stars, Kraft Scrapbook, Pastel Pink, Mint Retro, and more) plus a Custom Hex Color Picker, 4 frame border styles, 5 corner decorations, draggable/scalable/rotatable stickers, custom uploaded meme stickers persisted locally in `localStorage`, and `1 by 1` or `4x Scatter` placement.
 - **Virtual Booth Dispenser**: Realistic photo strip printing animation with optional synthesized mechanical Web Audio sound, skip, replay, and close-up lightbox inspection.
 - **Live Motion (iOS Live Photo Strip GIF) & Video Clips**: Optional 10-frame pre-shutter burst per pose compiled into a looping animated GIF strip (preserving layout, filter, theme, borders, and stickers), plus optional `MediaRecorder` full-session `.mp4`/`.webm` video recording with optional microphone toggle.
 
 ## Privacy & Architecture
 - **Solo Mode**: Photos, Live GIFs, and videos are processed strictly in browser memory (`HTMLCanvasElement`, `gifenc`, `MediaRecorder`) and never leave the device.
 - **Local Persistence**: `localStorage` stores only dark/light theme preference and user-uploaded custom stickers ("My Stickers").
-- **Remote Duo Ephemerality**: Room state and session captures live strictly in volatile server memory during the active session (zero database or disk writes) and automatically purge when participants leave or after 45 minutes of inactivity.
 
 ## Canonical Routes
 - Home & Studio Overview: `/`

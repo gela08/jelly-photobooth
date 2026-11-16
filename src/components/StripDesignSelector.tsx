@@ -13,9 +13,11 @@ import {
 
 interface StripDesignSelectorProps {
   stripTheme: StripThemeId
+  customStripColor?: string
   borderStyle: StripBorderStyle
   stripDecoration: StripDecoration
   onThemeChange: (id: StripThemeId) => void
+  onCustomColorChange?: (hex: string) => void
   onBorderChange: (style: StripBorderStyle) => void
   onDecorationChange: (dec: StripDecoration) => void
 }
@@ -104,22 +106,29 @@ function DecorationIcon({ id }: { id: StripDecoration }) {
 
 export default function StripDesignSelector({
   stripTheme,
+  customStripColor = '#e8d5c4',
   borderStyle,
   stripDecoration,
   onThemeChange,
+  onCustomColorChange,
   onBorderChange,
   onDecorationChange,
 }: StripDesignSelectorProps) {
+  const activeLabel =
+    stripTheme === 'custom'
+      ? `Custom (${customStripColor.toUpperCase()})`
+      : (STRIP_THEMES.find((t) => t.id === stripTheme)?.label ?? 'Layout Default')
+
   return (
     <div className="space-y-5 select-none">
       {/* Strip Background / Theme */}
       <div>
         <div className="flex items-center justify-between mb-2.5">
           <p className="font-display text-xs tracking-widest uppercase" style={{ color: 'var(--text-muted)' }}>
-            Strip Paper &amp; Theme
+            Strip Color &amp; Theme
           </p>
           <span className="font-body text-xs italic" style={{ color: 'var(--sepia)' }}>
-            {STRIP_THEMES.find((t) => t.id === stripTheme)?.label ?? 'Layout Default'}
+            {activeLabel}
           </span>
         </div>
 
@@ -158,6 +167,69 @@ export default function StripDesignSelector({
             )
           })}
         </div>
+
+        {onCustomColorChange && (
+          <div
+            className="mt-3 flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 rounded-sm"
+            style={{
+              background: stripTheme === 'custom' ? 'rgba(92,61,30,0.07)' : 'var(--surface-3)',
+              border: `1px solid ${stripTheme === 'custom' ? 'var(--vintage-brown)' : 'var(--border)'}`,
+            }}
+          >
+            <div className="flex items-center gap-2.5">
+              <label
+                className="relative w-8 h-8 rounded-sm overflow-hidden cursor-pointer flex-shrink-0 border"
+                style={{ background: customStripColor, borderColor: 'rgba(92,61,30,0.28)' }}
+                title="Pick any custom background color"
+              >
+                <input
+                  type="color"
+                  value={customStripColor}
+                  onChange={(e) => {
+                    onCustomColorChange(e.target.value)
+                    onThemeChange('custom')
+                  }}
+                  aria-label="Pick custom strip color"
+                  className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
+                />
+              </label>
+              <div>
+                <p className="font-display text-[11px] tracking-wider uppercase" style={{ color: 'var(--vintage-brown)' }}>
+                  Custom Strip Color
+                </p>
+                <p className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  {customStripColor.toUpperCase()} · Auto contrast ink
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              {['#f8d7da', '#d4edda', '#d1ecf1', '#e2d9f3', '#2d1e2f', '#1c2541'].map((hex) => (
+                <button
+                  key={hex}
+                  type="button"
+                  onClick={() => {
+                    onCustomColorChange(hex)
+                    onThemeChange('custom')
+                  }}
+                  aria-label={`Apply color ${hex}`}
+                  className="w-6 h-6 rounded-sm border transition-transform active:scale-90"
+                  style={{
+                    background: hex,
+                    borderColor:
+                      stripTheme === 'custom' && customStripColor.toLowerCase() === hex
+                        ? 'var(--vintage-brown)'
+                        : 'rgba(92,61,30,0.28)',
+                    boxShadow:
+                      stripTheme === 'custom' && customStripColor.toLowerCase() === hex
+                        ? '0 0 0 1.5px var(--vintage-brown)'
+                        : 'none',
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Photo Frame Border */}

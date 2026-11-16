@@ -101,12 +101,16 @@ export default function StickerEditor({
   const genIdRef = useRef(0)
   const imgRef = useRef<HTMLImageElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const lastSyncRef = useRef(0)
+  const [dragPos, setDragPos] = useState<{ uid: string; x: number; y: number } | null>(null)
   const dragRef = useRef<{
     uid: string
     startClientX: number
     startClientY: number
     origX: number
     origY: number
+    lastX: number
+    lastY: number
   } | null>(null)
 
   // Load saved custom stickers and scan public/stickers/
@@ -354,7 +358,8 @@ export default function StickerEditor({
             {/* Sticker interactive overlay layer */}
             {displaySize.width > 0 && (
               <div className="absolute inset-0 overflow-hidden">
-                {stickers.map((s) => {
+                {stickers.map((raw) => {
+                  const s = dragPos?.uid === raw.uid ? { ...raw, x: dragPos.x, y: dragPos.y } : raw
                   const active = s.uid === selectedUid
                   const boxDim = Math.max(18, baseDim * s.scale)
                   return (
@@ -370,7 +375,10 @@ export default function StickerEditor({
                           startClientY: e.clientY,
                           origX: s.x,
                           origY: s.y,
+                          lastX: s.x,
+                          lastY: s.y,
                         }
+                        setDragPos({ uid: s.uid, x: s.x, y: s.y })
                         try {
                           ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
                         } catch {
@@ -384,17 +392,43 @@ export default function StickerEditor({
                         const dy = e.clientY - dragRef.current.startClientY
                         const nx = clamp(dragRef.current.origX + dx / displaySize.width, 0.03, 0.97)
                         const ny = clamp(dragRef.current.origY + dy / displaySize.height, 0.03, 0.97)
-                        onChange(
-                          stickers.map((item) =>
-                            item.uid === s.uid ? { ...item, x: nx, y: ny } : item
+                        dragRef.current.lastX = nx
+                        dragRef.current.lastY = ny
+                        setDragPos({ uid: s.uid, x: nx, y: ny })
+
+                        const now = Date.now()
+                        if (now - lastSyncRef.current >= 160) {
+                          lastSyncRef.current = now
+                          onChange(
+                            stickers.map((item) =>
+                              item.uid === s.uid ? { ...item, x: nx, y: ny } : item
+                            )
                           )
-                        )
+                        }
                       }}
                       onPointerUp={() => {
-                        if (dragRef.current?.uid === s.uid) dragRef.current = null
+                        if (dragRef.current?.uid === s.uid) {
+                          const { lastX, lastY } = dragRef.current
+                          dragRef.current = null
+                          setDragPos(null)
+                          onChange(
+                            stickers.map((item) =>
+                              item.uid === s.uid ? { ...item, x: lastX, y: lastY } : item
+                            )
+                          )
+                        }
                       }}
                       onPointerCancel={() => {
-                        if (dragRef.current?.uid === s.uid) dragRef.current = null
+                        if (dragRef.current?.uid === s.uid) {
+                          const { lastX, lastY } = dragRef.current
+                          dragRef.current = null
+                          setDragPos(null)
+                          onChange(
+                            stickers.map((item) =>
+                              item.uid === s.uid ? { ...item, x: lastX, y: lastY } : item
+                            )
+                          )
+                        }
                       }}
                       className="absolute touch-none cursor-grab active:cursor-grabbing"
                       style={{
@@ -613,13 +647,13 @@ export default function StickerEditor({
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
           {visibleAssets.map((asset) => (
             <div key={asset.id} className="relative group">
               <button
                 type="button"
                 onClick={() => addStickerAsset(asset)}
-                className="w-full flex flex-col items-center gap-1 p-2 rounded-sm transition-all hover:scale-[1.03] active:scale-95"
+                className="w-full flex flex-col items-center gap-1 p-1.5 sm:p-2 rounded-sm transition-all hover:scale-[1.03] active:scale-95"
                 style={{
                   border: '1px solid var(--border)',
                   background: 'var(--surface)',

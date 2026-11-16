@@ -89,13 +89,13 @@ body {
 /* Media query selector for PWA/display-mode fullscreen */
 @media (display-mode: fullscreen) {
   .viewfinder-fullscreen-expand {
-    width: 70vw !important;
+    width: 78vw !important;
     height: 76vh !important;
     max-width: none !important;
     border-radius: 0 !important;
     object-fit: contain;
-
-   left: -15% !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
   }
 }
 
@@ -160,6 +160,11 @@ body {
   border-radius: 2px;
   padding: 1.25rem;
   box-shadow: 0 2px 8px var(--shadow-color);
+}
+@media (max-width: 639px) {
+  .section-card {
+    padding: 0.95rem;
+  }
 }
 
 /* ── Scrollbar ───────────────────────────────────────────────────────────── */
