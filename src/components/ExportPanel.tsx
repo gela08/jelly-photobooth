@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { PhotoSession } from '@/lib/types'
 import { generatePhotoboothCanvas, downloadPhoto } from '@/lib/canvasExport'
+import BoothPrinterAnimation from './BoothPrinterAnimation'
 
 interface ExportPanelProps {
   session: PhotoSession
@@ -25,12 +26,6 @@ const ShareIcon = () => (
 const RefreshIcon = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.96"/>
-  </svg>
-)
-
-const FilmIcon = () => (
-  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-muted)' }}>
-    <rect x="2" y="2" width="20" height="20" rx="2" ry="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/>
   </svg>
 )
 
@@ -90,39 +85,11 @@ export default function ExportPanel({ session, onRetake }: ExportPanelProps) {
         </p>
       </div>
 
-      {/* Preview Section */}
-      <div className="flex justify-center">
-        <div
-          className="relative max-h-[65vh] overflow-y-auto rounded-sm p-2 transition-all duration-500"
-          style={{
-            border: '1px solid var(--border)',
-            boxShadow: '0 8px 32px var(--shadow-color)',
-            background: 'var(--parchment)',
-          }}
-        >
-          {isGenerating ? (
-            <div className="w-64 h-80 flex flex-col items-center justify-center">
-              <div className="flex justify-center mb-3 animate-pulse">
-                <FilmIcon />
-              </div>
-              <p className="font-display text-[10px] tracking-[0.2em] uppercase" style={{ color: 'var(--text-muted)' }}>
-                Developing film…
-              </p>
-            </div>
-          ) : previewUrl ? (
-            <img
-              src={previewUrl}
-              alt="Final strip preview"
-              className="max-w-full max-h-[60vh] object-contain shadow-sm"
-              style={{ imageRendering: 'auto' }}
-            />
-          ) : (
-            <div className="w-64 h-80 flex items-center justify-center text-xs" style={{ color: 'var(--text-muted)' }}>
-              Failed to develop preview.
-            </div>
-          )}
-        </div>
-      </div>
+      {/* Virtual Physical Photobooth Dispenser Animation */}
+      <BoothPrinterAnimation
+        stripUrl={previewUrl}
+        isGenerating={isGenerating}
+      />
 
       {/* Action Buttons */}
       <div className="space-y-3">

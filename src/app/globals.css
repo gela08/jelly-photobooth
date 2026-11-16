@@ -230,3 +230,60 @@ body {
   transition: opacity 0.2s;
 }
 .pose-frame:hover { opacity: 1; }
+
+/* ── Virtual Photobooth Printer Animation ────────────────────────────────── */
+@keyframes printerHum {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(-0.6px, 0.5px); }
+  50% { transform: translate(0.6px, -0.4px); }
+  75% { transform: translate(-0.4px, -0.5px); }
+}
+.printer-hum {
+  animation: printerHum 0.14s steps(2) infinite;
+}
+
+@keyframes printerPrepFlash {
+  0% { opacity: 0; }
+  30% { opacity: 0.9; }
+  100% { opacity: 0; }
+}
+.printer-prep-flash {
+  animation: printerPrepFlash 0.6s ease-out forwards;
+}
+
+@keyframes stripEmerge {
+  0% {
+    transform: translateY(-102%);
+  }
+  20% {
+    transform: translateY(-78%);
+  }
+  32% {
+    transform: translateY(-74%);
+  }
+  58% {
+    transform: translateY(-42%);
+  }
+  70% {
+    transform: translateY(-37%);
+  }
+  92% {
+    transform: translateY(-4%);
+  }
+  100% {
+    transform: translateY(0%);
+  }
+}
+.strip-emerge {
+  animation: stripEmerge 2.8s cubic-bezier(0.25, 0.65, 0.35, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .printer-hum,
+  .printer-prep-flash,
+  .strip-emerge {
+    animation: none !important;
+    transform: none !important;
+  }
+}
+
