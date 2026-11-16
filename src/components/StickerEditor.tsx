@@ -20,6 +20,8 @@ interface StickerEditorProps {
   session: PhotoSession
   stickers: PlacedSticker[]
   onChange: (next: PlacedSticker[]) => void
+  renderBaseCanvas?: () => Promise<HTMLCanvasElement>
+  renderKey?: string
 }
 
 type PlacementMode = 'single' | 'scatter'
@@ -82,6 +84,8 @@ export default function StickerEditor({
   session,
   stickers,
   onChange,
+  renderBaseCanvas,
+  renderKey,
 }: StickerEditorProps) {
   const [baseUrl, setBaseUrl] = useState<string | null>(null)
   const [isRendering, setIsRendering] = useState(true)
@@ -122,11 +126,14 @@ export default function StickerEditor({
 
   // Generate base strip preview (without stickers, since stickers are interactive overlay)
   useEffect(() => {
-    if (!session.photos.length) return
+    if (!session.photos.length && !renderBaseCanvas) return
     const id = ++genIdRef.current
     setIsRendering(true)
     const timer = setTimeout(() => {
-      generatePhotoboothCanvas(session, undefined, { includeStickers: false })
+      const promise = renderBaseCanvas
+        ? renderBaseCanvas()
+        : generatePhotoboothCanvas(session, undefined, { includeStickers: false })
+      promise
         .then((canvas) => {
           if (genIdRef.current === id) {
             setBaseUrl(canvas.toDataURL('image/jpeg', 0.88))
@@ -148,6 +155,8 @@ export default function StickerEditor({
     session.stripTheme,
     session.borderStyle,
     session.stripDecoration,
+    renderBaseCanvas,
+    renderKey,
   ])
 
   // Observe rendered image size so sticker dimensions match canvasExport 1:1

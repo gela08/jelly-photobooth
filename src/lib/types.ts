@@ -103,6 +103,23 @@ export type StripBorderStyle = 'classic' | 'rounded' | 'dashed' | 'none'
 
 export type StripDecoration = 'none' | 'stars' | 'hearts' | 'corners' | 'sparkles'
 
+// ── Live Motion & Video Session ───────────────────────────────────────────
+
+export interface SessionVideoData {
+  /** Per-pose captured burst frames (mirrored JPEG data URLs) leading into each shot */
+  liveFramesPerPose: string[][]
+  /** Recorded full-session MediaRecorder clip Blob URL (if supported) */
+  videoUrl?: string
+  /** Negotiated video MIME type (e.g. video/mp4 or video/webm) */
+  videoMimeType?: string
+  /** Suggested file extension ('mp4' | 'webm') */
+  videoExt?: 'mp4' | 'webm'
+  /** Elapsed recording duration in seconds */
+  durationSec?: number
+  /** Non-fatal notice (e.g. mic denied or video codec unsupported) */
+  warning?: string
+}
+
 // ── Session ───────────────────────────────────────────────────────────────
 
 export interface PhotoSession {
@@ -117,6 +134,7 @@ export interface PhotoSession {
   stripTheme?: StripThemeId
   borderStyle?: StripBorderStyle
   stripDecoration?: StripDecoration
+  liveFramesPerPose?: string[][]
 }
 
 // ── Setup options ─────────────────────────────────────────────────────────

@@ -2,12 +2,76 @@ import Nav from '@/components/Nav'
 import Link from 'next/link'
 import type { Metadata } from 'next'
 
+const title = "Terms of Use | Jelly's Photobooth"
+const description =
+  "Read the Terms of Use for Jelly's Photobooth covering Solo and Remote Duo sessions, participant consent, custom sticker uploads, and media exports."
+
 export const metadata: Metadata = {
-  title: 'Terms of Use — Vintage Photobooth',
+  title,
+  description,
+  alternates: {
+    canonical: '/terms',
+  },
+  openGraph: {
+    type: 'website',
+    url: '/terms',
+    title,
+    description,
+    images: [{ url: '/opengraph-image', width: 1200, height: 630, alt: title }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title,
+    description,
+    images: ['/opengraph-image'],
+  },
 }
 
 export default function TermsPage() {
-  const lastUpdated = 'February 23, 2026'
+  const lastUpdated = 'November 16, 2026'
+  const sections = [
+    {
+      title: '1. Acceptance of Terms',
+      body: "By accessing or using Jelly's Photobooth (\"the App\"), including Solo Photobooth and Remote Duo modes, you agree to these Terms of Use. If you do not agree with these terms, please discontinue use of the App.",
+    },
+    {
+      title: '2. Description of Service',
+      body: "Jelly's Photobooth is a free, browser-based photobooth application offering client-side film filters, multi-pose strip layouts, interactive crop and zoom framing, themed backgrounds and borders, customizable sticker overlays, virtual dispenser printing, optional Live Strip GIF and session video exports, and optional synchronized two-person Remote Duo rooms.",
+    },
+    {
+      title: '3. Permitted Use',
+      body: 'You may use the App for personal, creative, and non-commercial photography; capturing solo strips or consented group and Remote Duo sessions; customizing strips with built-in or self-uploaded stickers; and saving or sharing your exported PNG, GIF, or video files for personal enjoyment and events.',
+    },
+    {
+      title: '4. User-Uploaded Stickers & Custom Content',
+      body: 'When uploading meme images or custom stickers into the Sticker Editor, you represent that you own the image or hold the necessary permission to use it. Custom stickers are stored only within your local browser storage, and you are solely responsible for any imagery you place onto exported strips or share inside a Remote Duo room.',
+    },
+    {
+      title: '5. Remote Duo Rooms & Participant Consent',
+      body: 'Before capturing photos or starting a synchronized Remote Duo session with another person, you must obtain their clear consent. Keep 6-character room codes and invite links private to intended participants. Because Remote Duo runs strictly in volatile memory without server backups, sessions will be lost if all participants disconnect or when a room expires.',
+    },
+    {
+      title: '6. Prohibited Use',
+      body: 'You may not use the App to record, photograph, or transmit images of any individual without their consent; share unlawful, abusive, harassing, or infringing media in Remote Duo rooms; attempt to disrupt room signaling or abuse WebSocket endpoints; or redistribute/resell the App without authorization.',
+    },
+    {
+      title: '7. Intellectual Property',
+      body: "The App's interface, visual design, built-in sticker artwork, and source code remain protected intellectual property. You retain ownership of the photographs, strips, Live GIFs, and video recordings you capture using the App.",
+    },
+    {
+      title: '8. Media Codec & Hardware Availability',
+      body: 'Video recording formats (.mp4 / .webm), audio capture, camera resolution, WebRTC peer connectivity, and GIF encoding performance depend on your device hardware, browser permissions, and network firewall rules. Optional live/video features may gracefully degrade or be unavailable on unsupported browsers.',
+    },
+    {
+      title: '9. Disclaimer of Warranties & Limitation of Liability',
+      body: 'The App is provided "as is" and "as available" without warranties of any kind. To the maximum extent permitted by law, we are not liable for any indirect, incidental, or consequential damages arising from lost unsaved sessions, network interruptions in Remote Duo rooms, or device permission issues.',
+    },
+    {
+      title: '10. Changes to Terms',
+      body: 'We may update these Terms of Use as new features are introduced. Continued use of the App after revisions are published constitutes acceptance of the updated terms indicated by the date at the top of this page.',
+    },
+  ]
+
   return (
     <div className="min-h-screen select-none film-grain" style={{ background: 'var(--cream)' }}>
       <Nav />
@@ -19,19 +83,17 @@ export default function TermsPage() {
             <p className="text-sm mt-2" style={{ color: 'var(--warm-gray)' }}>Last updated: {lastUpdated}</p>
           </div>
 
-          <div className="space-y-8 font-body leading-relaxed" style={{ background: 'var(--aged-white)', border: '1px solid var(--border)', borderRadius: '2px', padding: '2rem', boxShadow: '0 2px 8px var(--shadow-color)' }}>
-            {[
-              { title: '1. Acceptance of Terms', body: 'By using Vintage Photobooth ("the App"), you agree to these Terms of Use. If you do not agree with these terms, please do not use the App. These terms apply to all visitors and users of the App.' },
-              { title: '2. Description of Service', body: 'Vintage Photobooth is a free, browser-based photobooth application that allows users to take photos using their device\'s camera, apply vintage-style filters, arrange photos into layouts, and download the results. The App operates entirely client-side with no server-side processing of user data or images.' },
-              { title: '3. Permitted Use', body: 'You may use the App for personal, non-commercial photography and creative use; taking photos of yourself or others with their consent; creating and sharing photobooth strips for personal enjoyment; and events, parties, and social gatherings.' },
-              { title: '4. Prohibited Use', body: 'You may not use the App to capture images of individuals without their consent; create, distribute, or store illegal content of any kind; attempt to circumvent browser security or permission models; use the App in any way that violates applicable laws or regulations; or reproduce, copy, or resell the App without permission.' },
-              { title: '5. Intellectual Property', body: 'The App\'s design, code, and visual elements are protected intellectual property. Photos you take using the App belong to you. You are responsible for ensuring you have the right to photograph any individuals in your sessions and to use those images as you see fit.' },
-              { title: '6. Consent to be Photographed', body: 'You are solely responsible for obtaining the consent of any individuals you photograph using the App. By using the App to capture photos of others, you represent that you have obtained all necessary consents and that your use of those images complies with all applicable privacy laws and regulations.' },
-              { title: '7. Disclaimer of Warranties', body: 'The App is provided "as is" and "as available" without warranties of any kind, either express or implied. We do not warrant that the App will be uninterrupted, error-free, or compatible with all browsers and devices. Camera availability depends on your device hardware and browser permissions.' },
-              { title: '8. Limitation of Liability', body: 'To the fullest extent permitted by law, we shall not be liable for any indirect, incidental, special, consequential, or punitive damages arising from your use of the App, including but not limited to loss of photos, failure to capture or download images, or camera permission issues.' },
-              { title: '9. Changes to Terms', body: 'We reserve the right to update these Terms of Use at any time. Continued use of the App after changes are posted constitutes your acceptance of the revised terms. The date of the most recent revision is indicated at the top of this page.' },
-              { title: '10. Governing Law', body: 'These Terms shall be governed by and construed in accordance with applicable law. Any disputes arising under these terms shall be subject to the exclusive jurisdiction of the appropriate courts.' },
-            ].map(({ title, body }) => (
+          <div
+            className="space-y-8 font-body leading-relaxed"
+            style={{
+              background: 'var(--aged-white)',
+              border: '1px solid var(--border)',
+              borderRadius: '2px',
+              padding: '2rem',
+              boxShadow: '0 2px 8px var(--shadow-color)',
+            }}
+          >
+            {sections.map(({ title, body }) => (
               <section key={title}>
                 <h2 className="font-display text-lg font-bold tracking-wide mb-3" style={{ color: 'var(--vintage-brown)' }}>{title}</h2>
                 <p style={{ color: 'var(--warm-gray)' }}>{body}</p>
@@ -39,17 +101,28 @@ export default function TermsPage() {
             ))}
           </div>
 
-          <div className="mt-8 text-center">
-            <Link href="/" className="font-display text-xs tracking-widest uppercase transition-colors" style={{ color: 'var(--warm-gray)' }}>
+          <div className="mt-8 flex items-center justify-center gap-6">
+            <Link
+              href="/"
+              className="font-display text-xs tracking-widest uppercase transition-colors text-[var(--warm-gray)] hover:text-[var(--vintage-brown)]"
+            >
               ← Back to Home
+            </Link>
+            <Link
+              href="/privacy"
+              className="font-display text-xs tracking-widest uppercase transition-colors text-[var(--sepia)] hover:text-[var(--vintage-brown)]"
+            >
+              Privacy Policy →
             </Link>
           </div>
         </div>
 
         <footer style={{ borderTop: '1px solid var(--border)', background: 'var(--parchment)' }}>
           <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <p className="font-display text-xs tracking-widest uppercase" style={{ color: 'var(--warm-gray)' }}>✦ Vintage Photobooth</p>
-            <div className="flex gap-6 font-display text-xs tracking-widest uppercase" style={{ color: 'var(--warm-gray)', opacity: 0.6 }}>
+            <p className="font-display text-xs tracking-widest uppercase" style={{ color: 'var(--warm-gray)' }}>
+              ✦ Jelly&apos;s Photobooth | developed by <a href="https://akaizer.vercel.app/" className="underline hover:text-[var(--vintage-brown)] transition-colors">Angela Gardan</a>
+            </p>
+            <div className="flex gap-6 font-display text-xs tracking-widest uppercase" style={{ color: 'var(--warm-gray)', opacity: 0.7 }}>
               <Link href="/privacy" style={{ color: 'inherit' }}>Privacy</Link>
               <Link href="/terms" style={{ color: 'inherit' }}>Terms</Link>
             </div>

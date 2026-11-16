@@ -15,7 +15,7 @@ const S = 2 // 2× scale for high-res output
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-function loadImage(src: string): Promise<HTMLImageElement> {
+export function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.crossOrigin = 'anonymous'
@@ -35,7 +35,7 @@ function createSeededRng(seed: number) {
 }
 
 /** Cover-crop with optional pan/zoom transform: draw image filling (dx,dy,dw,dh) with no distortion */
-function drawImageCover(
+export function drawImageCover(
   ctx: CanvasRenderingContext2D,
   img: HTMLImageElement,
   dx: number, dy: number, dw: number, dh: number,
@@ -70,7 +70,7 @@ function drawImageCover(
   ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh)
 }
 
-function applyPixelFilter(
+export function applyPixelFilter(
   ctx: CanvasRenderingContext2D,
   filter: FilterType,
   x: number, y: number, w: number, h: number
@@ -146,7 +146,7 @@ function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: num
 // THEME & BACKGROUND HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-function resolveEffectiveTheme(session: PhotoSession, layout: LayoutType): StripThemeConfig {
+export function resolveEffectiveTheme(session: PhotoSession, layout: LayoutType): StripThemeConfig {
   const selectedId = session.stripTheme ?? 'auto'
   if (selectedId !== 'auto') {
     return getStripTheme(selectedId)
@@ -207,7 +207,7 @@ function resolveEffectiveTheme(session: PhotoSession, layout: LayoutType): Strip
   return getStripTheme('vintage_cream')
 }
 
-function drawThemeBackground(ctx: CanvasRenderingContext2D, w: number, h: number, theme: StripThemeConfig) {
+export function drawThemeBackground(ctx: CanvasRenderingContext2D, w: number, h: number, theme: StripThemeConfig) {
   const rng = createSeededRng(Math.round(w * 13 + h * 7))
 
   switch (theme.pattern) {
@@ -329,7 +329,7 @@ function drawThemeBackground(ctx: CanvasRenderingContext2D, w: number, h: number
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Draw photo with configurable frame style and shadow */
-function drawPhotoFramed(
+export function drawPhotoFramed(
   ctx: CanvasRenderingContext2D,
   img: HTMLImageElement,
   filter: FilterType,
@@ -381,7 +381,7 @@ function drawPhotoFramed(
 }
 
 /** Draw photo without outer mat (used by classic/filmstrip, still honors rounded/dashed accents) */
-function drawPhoto(
+export function drawPhoto(
   ctx: CanvasRenderingContext2D,
   img: HTMLImageElement,
   filter: FilterType,
@@ -418,7 +418,7 @@ function drawPhoto(
 // TEXT HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-function drawStripTitle(ctx: CanvasRenderingContext2D, totalW: number, y: number, theme: StripThemeConfig) {
+export function drawStripTitle(ctx: CanvasRenderingContext2D, totalW: number, y: number, theme: StripThemeConfig) {
   ctx.save()
   ctx.fillStyle = theme.titleColor
   ctx.font = `bold ${12 * S}px 'Courier New', monospace`
@@ -427,7 +427,7 @@ function drawStripTitle(ctx: CanvasRenderingContext2D, totalW: number, y: number
   ctx.restore()
 }
 
-function drawStripBottom(
+export function drawStripBottom(
   ctx: CanvasRenderingContext2D,
   caption: string,
   showDate: boolean,
@@ -512,7 +512,7 @@ function drawMiniHeart(ctx: CanvasRenderingContext2D, cx: number, cy: number, si
   ctx.restore()
 }
 
-function drawStripDecorations(
+export function drawStripDecorations(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number,
@@ -574,7 +574,7 @@ function drawStripDecorations(
   }
 }
 
-async function drawPlacedStickers(
+export async function drawPlacedStickers(
   ctx: CanvasRenderingContext2D,
   stickers: PlacedSticker[],
   w: number,

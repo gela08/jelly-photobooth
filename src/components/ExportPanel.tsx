@@ -1,12 +1,18 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { PhotoSession } from '@/lib/types'
+import { PhotoSession, SessionVideoData } from '@/lib/types'
 import { generatePhotoboothCanvas, downloadPhoto } from '@/lib/canvasExport'
+import {
+  downloadUrl,
+  formatDuration,
+  generateLiveStripGif,
+} from '@/lib/liveExport'
 import BoothPrinterAnimation from './BoothPrinterAnimation'
 
 interface ExportPanelProps {
   session: PhotoSession
+  sessionVideo?: SessionVideoData
   onRetake: () => void
 }
 
@@ -35,11 +41,51 @@ const LockIcon = () => (
   </svg>
 )
 
-export default function ExportPanel({ session, onRetake }: ExportPanelProps) {
+const LiveGifIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10" />
+    <circle cx="12" cy="12" r="4" />
+    <line x1="12" y1="2" x2="12" y2="4" />
+    <line x1="12" y1="20" x2="12" y2="22" />
+    <line x1="2" y1="12" x2="4" y2="12" />
+    <line x1="20" y1="12" x2="22" y2="12" />
+  </svg>
+)
+
+const VideoIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="23 7 16 12 23 17 23 7" />
+    <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+  </svg>
+)
+
+const DownloadSmIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="7 10 12 15 17 10" />
+    <line x1="12" y1="15" x2="12" y2="3" />
+  </svg>
+)
+
+export default function ExportPanel({ session, sessionVideo, onRetake }: ExportPanelProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(true)
   const [isDownloading, setIsDownloading] = useState(false)
+  const [printerDone, setPrinterDone] = useState(false)
+
+  // Live Strip GIF state
+  const [liveGifUrl, setLiveGifUrl] = useState<string | null>(null)
+  const [gifProgress, setGifProgress] = useState(0)
+  const [isEncodingGif, setIsEncodingGif] = useState(false)
+  const [gifError, setGifError] = useState<string | null>(null)
+
   const genIdRef = useRef(0)
+  const gifJobIdRef = useRef(0)
+  const liveGifUrlRef = useRef<string | null>(null)
+
+  const hasLiveFrames = Boolean(
+    session.liveFramesPerPose?.some((frames) => frames && frames.length > 0)
+  )
 
   const generatePreview = useCallback(async () => {
     const id = ++genIdRef.current
@@ -60,18 +106,81 @@ export default function ExportPanel({ session, onRetake }: ExportPanelProps) {
     generatePreview()
   }, [generatePreview])
 
+  // Revoke generated GIF Object URL cleanly on unmount or re-encode
+  useEffect(() => {
+    return () => {
+      if (liveGifUrlRef.current) {
+        URL.revokeObjectURL(liveGifUrlRef.current)
+        liveGifUrlRef.current = null
+      }
+    }
+  }, [])
+
+  const buildLiveGif = useCallback(async (): Promise<string | null> => {
+    if (!hasLiveFrames) return null
+    if (liveGifUrlRef.current) return liveGifUrlRef.current
+
+    const jobId = ++gifJobIdRef.current
+    setIsEncodingGif(true)
+    setGifError(null)
+    setGifProgress(0)
+
+    try {
+      const result = await generateLiveStripGif(session, (pct) => {
+        if (gifJobIdRef.current === jobId) setGifProgress(pct)
+      })
+      if (gifJobIdRef.current === jobId) {
+        liveGifUrlRef.current = result.url
+        setLiveGifUrl(result.url)
+        return result.url
+      } else {
+        URL.revokeObjectURL(result.url)
+        return null
+      }
+    } catch {
+      if (gifJobIdRef.current === jobId) {
+        setGifError('Could not render Live GIF strip on this browser.')
+      }
+      return null
+    } finally {
+      if (gifJobIdRef.current === jobId) setIsEncodingGif(false)
+    }
+  }, [hasLiveFrames, session])
+
+  // Wait until printer animation settles so mobile 60fps CSS slide stays butter-smooth
+  useEffect(() => {
+    if (printerDone && hasLiveFrames && !liveGifUrlRef.current && !isEncodingGif) {
+      buildLiveGif()
+    }
+  }, [printerDone, hasLiveFrames, isEncodingGif, buildLiveGif])
+
   const handleDownload = async (format: 'print' | 'social') => {
     if (isDownloading) return
     setIsDownloading(true)
     try {
-      // The naming logic should ideally live inside downloadPhoto in canvasExport.ts
       await downloadPhoto(session, format)
     } catch (err) {
       console.error('Download failed:', err)
     } finally {
-      // Small delay to prevent double-clicking and allow browser to trigger save
       setTimeout(() => setIsDownloading(false), 1500)
     }
+  }
+
+  const handleDownloadGif = async () => {
+    const dateStr = new Date().toISOString().split('T')[0]
+    const url = liveGifUrl || (await buildLiveGif())
+    if (url) {
+      downloadUrl(url, `jellybooth_${dateStr}_live.gif`)
+    }
+  }
+
+  const handleDownloadVideo = () => {
+    if (!sessionVideo?.videoUrl) return
+    const dateStr = new Date().toISOString().split('T')[0]
+    downloadUrl(
+      sessionVideo.videoUrl,
+      `jellybooth_${dateStr}_session.${sessionVideo.videoExt || 'webm'}`
+    )
   }
 
   return (
@@ -89,6 +198,7 @@ export default function ExportPanel({ session, onRetake }: ExportPanelProps) {
       <BoothPrinterAnimation
         stripUrl={previewUrl}
         isGenerating={isGenerating}
+        onComplete={() => setPrinterDone(true)}
       />
 
       {/* Action Buttons */}
@@ -121,6 +231,140 @@ export default function ExportPanel({ session, onRetake }: ExportPanelProps) {
           </button>
         </div>
 
+        {/* Live Photo Strip (GIF) & Session Video Card */}
+        {(hasLiveFrames || sessionVideo?.videoUrl || sessionVideo?.warning) && (
+          <div className="section-card space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span style={{ color: 'var(--vintage-brown)' }}><LiveGifIcon /></span>
+                <div>
+                  <p className="font-display text-xs tracking-widest uppercase" style={{ color: 'var(--vintage-brown)' }}>
+                    Live Memories
+                  </p>
+                  <p className="font-body text-xs" style={{ color: 'var(--text-muted)' }}>
+                    Moving Live Strip GIF &amp; session clip
+                  </p>
+                </div>
+              </div>
+              {sessionVideo?.durationSec ? (
+                <span className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  {formatDuration(sessionVideo.durationSec)}
+                </span>
+              ) : null}
+            </div>
+
+            {sessionVideo?.warning && (
+              <p className="font-body text-xs" style={{ color: 'var(--sepia)' }}>
+                {sessionVideo.warning}
+              </p>
+            )}
+
+            <div className={`grid gap-4 ${hasLiveFrames && sessionVideo?.videoUrl ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
+              {/* Live Looping GIF Strip Preview & Download */}
+              {hasLiveFrames && (
+                <div
+                  className="p-3 rounded-sm flex flex-col justify-between gap-3"
+                  style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-display text-[10px] tracking-widest uppercase" style={{ color: 'var(--text-secondary)' }}>
+                      Live Strip (GIF)
+                    </span>
+                    <span className="font-body text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      Looping motion
+                    </span>
+                  </div>
+
+                  <div className="flex justify-center items-center min-h-[180px] rounded-sm p-2" style={{ background: 'var(--surface-2)' }}>
+                    {liveGifUrl ? (
+                      <img
+                        src={liveGifUrl}
+                        alt="Animated live photo strip"
+                        referrerPolicy="no-referrer"
+                        className="max-w-full max-h-60 object-contain shadow-sm"
+                        style={{ border: '1px solid var(--border)' }}
+                      />
+                    ) : isEncodingGif ? (
+                      <div className="w-full max-w-[200px] text-center space-y-2 py-6">
+                        <div
+                          className="w-6 h-6 mx-auto rounded-full border-2 border-t-transparent animate-spin"
+                          style={{ borderColor: 'var(--border)', borderTopColor: 'var(--vintage-brown)' }}
+                        />
+                        <p className="font-display text-[10px] tracking-widest uppercase" style={{ color: 'var(--text-muted)' }}>
+                          Creating Live GIF · {gifProgress}%
+                        </p>
+                      </div>
+                    ) : gifError ? (
+                      <p className="font-body text-xs text-center px-3" style={{ color: 'var(--sepia)' }}>
+                        {gifError}
+                      </p>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => buildLiveGif()}
+                        className="px-3.5 py-2 rounded-sm font-display text-[10px] tracking-widest uppercase"
+                        style={{ border: '1px solid var(--border)', color: 'var(--vintage-brown)', background: 'var(--surface)' }}
+                      >
+                        Render Live Preview
+                      </button>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadGif}
+                    disabled={isEncodingGif}
+                    className="w-full flex items-center justify-center gap-2 font-display text-[11px] tracking-widest uppercase px-4 py-3 rounded-sm transition-all active:scale-95 disabled:opacity-50"
+                    style={{ background: 'var(--vintage-brown)', color: 'var(--cream)' }}
+                  >
+                    <DownloadSmIcon />
+                    <span>{isEncodingGif ? `Creating GIF (${gifProgress}%)…` : 'Save Live Strip (.gif)'}</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Full Session Video Preview & Download */}
+              {sessionVideo?.videoUrl && (
+                <div
+                  className="p-3 rounded-sm flex flex-col justify-between gap-3"
+                  style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5 font-display text-[10px] tracking-widest uppercase" style={{ color: 'var(--text-secondary)' }}>
+                      <VideoIcon />
+                      Session Clip
+                    </span>
+                    <span className="font-mono text-[10px] uppercase" style={{ color: 'var(--text-muted)' }}>
+                      {sessionVideo.videoExt || 'webm'}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-center items-center min-h-[180px] rounded-sm overflow-hidden bg-black">
+                    <video
+                      src={sessionVideo.videoUrl}
+                      controls
+                      playsInline
+                      loop
+                      muted
+                      className="w-full max-h-60 object-contain"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadVideo}
+                    className="w-full flex items-center justify-center gap-2 font-display text-[11px] tracking-widest uppercase px-4 py-3 rounded-sm transition-all active:scale-95"
+                    style={{ background: 'var(--sepia)', color: 'var(--cream)' }}
+                  >
+                    <DownloadSmIcon />
+                    <span>Save Video (.{sessionVideo.videoExt || 'webm'})</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <button
           onClick={onRetake}
           className="w-full flex items-center justify-center gap-2 font-display text-[11px] tracking-widest uppercase px-6 py-4 transition-all active:scale-95 rounded-sm"
@@ -137,7 +381,7 @@ export default function ExportPanel({ session, onRetake }: ExportPanelProps) {
 
       <p className="text-center text-[10px] flex items-center justify-center gap-2" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>
         <LockIcon />
-        Photos stay in your browser — nothing is uploaded.
+        Photos &amp; clips stay in your browser — nothing is uploaded.
       </p>
     </div>
   )

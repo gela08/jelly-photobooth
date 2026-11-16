@@ -1,15 +1,24 @@
 'use client'; // This is the magic fix
 
 import { useRef, useState, useCallback, useEffect } from 'react'
-import { FilterType, FILTERS, CountdownSeconds } from '@/lib/types'
+import { FilterType, FILTERS, CountdownSeconds, SessionVideoData } from '@/lib/types'
 import FilterSelector from '@/components/FilterSelector'
+import {
+  downloadUrl,
+  formatDuration,
+  selectSupportedVideoMimeType,
+} from '@/lib/liveExport'
 
 interface CameraBoothProps {
   filter: FilterType
   poseCount: number
   countdownSeconds: CountdownSeconds
+  liveCaptureEnabled?: boolean
+  includeAudio?: boolean
+  onLiveCaptureToggle?: () => void
+  onAudioToggle?: () => void
   onFilterChange: (f: FilterType) => void
-  onPhotosCapture: (photos: string[]) => void
+  onPhotosCapture: (photos: string[], videoData?: SessionVideoData) => void
   onCancel: () => void
 }
 
@@ -70,6 +79,38 @@ function CloseIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  )
+}
+function VideoIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="23 7 16 12 23 17 23 7" />
+      <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+    </svg>
+  )
+}
+function MicIcon({ off = false }: { off?: boolean }) {
+  return off ? (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="1" y1="1" x2="23" y2="23" />
+      <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
+      <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23" />
+      <line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
+    </svg>
+  ) : (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+      <line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
+    </svg>
+  )
+}
+function DownloadIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
     </svg>
   )
 }
@@ -169,15 +210,39 @@ function PhotoLightbox({ photo, index, total, cssFilter, onClose }: {
 }
 
 // ── Main component ─────────────────────────────────────────────────────────
-export default function CameraBooth({ filter, poseCount, countdownSeconds, onFilterChange, onPhotosCapture, onCancel }: CameraBoothProps) {
+export default function CameraBooth({
+  filter,
+  poseCount,
+  countdownSeconds,
+  liveCaptureEnabled = true,
+  includeAudio = false,
+  onLiveCaptureToggle,
+  onAudioToggle,
+  onFilterChange,
+  onPhotosCapture,
+  onCancel,
+}: CameraBoothProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const isMountedRef = useRef(true)
   const isRunningRef = useRef(false)
 
+  // Live capture & video recording refs
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const micStreamRef = useRef<MediaStream | null>(null)
+  const recRafRef = useRef<number | null>(null)
+  const recTimerRef = useRef<number | null>(null)
+  const burstIntervalRef = useRef<number | null>(null)
+  const filterRef = useRef(filter)
+  filterRef.current = filter
+
   const [phase, setPhase] = useState<BoothPhase>('ready')
   const [capturedPhotos, setCapturedPhotos] = useState<string[]>([])
+  const [sessionVideo, setSessionVideo] = useState<SessionVideoData | undefined>(undefined)
+  const [showVideoPreview, setShowVideoPreview] = useState(false)
+  const [recElapsedSec, setRecElapsedSec] = useState(0)
+  const [isRecordingActive, setIsRecordingActive] = useState(false)
   const [currentShot, setCurrentShot] = useState(0)
   const [countdown, setCountdown] = useState(0)
   const [isFlashing, setIsFlashing] = useState(false)
@@ -241,14 +306,40 @@ export default function CameraBooth({ filter, poseCount, countdownSeconds, onFil
     }
   }, [])
 
+  const stopActiveRecordingLoops = useCallback(() => {
+    if (burstIntervalRef.current !== null) {
+      window.clearInterval(burstIntervalRef.current)
+      burstIntervalRef.current = null
+    }
+    if (recTimerRef.current !== null) {
+      window.clearInterval(recTimerRef.current)
+      recTimerRef.current = null
+    }
+    if (recRafRef.current !== null) {
+      window.cancelAnimationFrame(recRafRef.current)
+      recRafRef.current = null
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop()
+      } catch {
+        // ignore stop errors
+      }
+    }
+    micStreamRef.current?.getTracks().forEach((t) => t.stop())
+    micStreamRef.current = null
+    setIsRecordingActive(false)
+  }, [])
+
   useEffect(() => {
     isMountedRef.current = true
     startCamera()
     return () => {
       isMountedRef.current = false
+      stopActiveRecordingLoops()
       streamRef.current?.getTracks().forEach((t) => t.stop())
     }
-  }, [startCamera])
+  }, [startCamera, stopActiveRecordingLoops])
 
   // Capture clean mirrored frame (filters are applied non-destructively in preview/export)
   const captureFrame = useCallback((): string | null => {
@@ -262,20 +353,180 @@ export default function CameraBooth({ filter, poseCount, countdownSeconds, onFil
     return canvas.toDataURL('image/png')
   }, [])
 
+  /** Capture a lightweight mirrored JPEG frame (<= 380px) for Live Motion / GIF strip */
+  const captureBurstFrame = useCallback((burstCanvas: HTMLCanvasElement): string | null => {
+    const video = videoRef.current
+    if (!video || video.videoWidth === 0) return null
+    const maxW = 380
+    const scale = Math.min(1, maxW / video.videoWidth)
+    const w = Math.max(160, Math.round(video.videoWidth * scale))
+    const h = Math.max(120, Math.round(video.videoHeight * scale))
+    if (burstCanvas.width !== w || burstCanvas.height !== h) {
+      burstCanvas.width = w
+      burstCanvas.height = h
+    }
+    const ctx = burstCanvas.getContext('2d')
+    if (!ctx) return null
+    ctx.save()
+    ctx.scale(-1, 1)
+    ctx.drawImage(video, -w, 0, w, h)
+    ctx.restore()
+    return burstCanvas.toDataURL('image/jpeg', 0.78)
+  }, [])
+
   const startSession = useCallback(async () => {
     if (isRunningRef.current || !cameraReady) return
     isRunningRef.current = true
     setPhase('running')
+    setShowVideoPreview(false)
+
+    if (sessionVideo?.videoUrl) {
+      URL.revokeObjectURL(sessionVideo.videoUrl)
+      setSessionVideo(undefined)
+    }
+
     const shots: string[] = []
+    const liveBursts: string[][] = []
+    const burstCanvas = document.createElement('canvas')
+
+    // Optional MediaRecorder + live timer setup (never blocks photo capture)
+    let recordingWarning: string | undefined
+    let chosenFormat: { mimeType: string; ext: 'mp4' | 'webm' } | null = null
+    const recordedChunks: Blob[] = []
+    let recorderStoppedPromise: Promise<Blob | null> | null = null
+    const recStartedAt = Date.now()
+
+    if (liveCaptureEnabled && streamRef.current) {
+      setRecElapsedSec(0)
+      setIsRecordingActive(true)
+      recTimerRef.current = window.setInterval(() => {
+        if (isMountedRef.current) {
+          setRecElapsedSec(Math.floor((Date.now() - recStartedAt) / 1000))
+        }
+      }, 400)
+
+      let audioTrack: MediaStreamTrack | null = null
+      if (includeAudio && navigator.mediaDevices?.getUserMedia) {
+        try {
+          const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+          if (isMountedRef.current) {
+            micStreamRef.current = micStream
+            audioTrack = micStream.getAudioTracks()[0] ?? null
+          } else {
+            micStream.getTracks().forEach((t) => t.stop())
+          }
+        } catch {
+          recordingWarning = 'Microphone permission unavailable — recorded video without audio.'
+        }
+      }
+
+      chosenFormat = selectSupportedVideoMimeType(Boolean(audioTrack))
+      if (!chosenFormat) {
+        recordingWarning =
+          recordingWarning ??
+          'Video clip recording is unsupported in this browser, but Live GIF strip was captured.'
+      } else {
+        try {
+          const videoEl = videoRef.current
+          let recordStream: MediaStream | null = null
+
+          // Record mirrored filtered stream via lightweight offscreen canvas if supported
+          if (
+            videoEl &&
+            videoEl.videoWidth > 0 &&
+            typeof HTMLCanvasElement !== 'undefined' &&
+            typeof (document.createElement('canvas') as HTMLCanvasElement & { captureStream?: (fps?: number) => MediaStream }).captureStream === 'function'
+          ) {
+            const recCanvas = document.createElement('canvas')
+            const maxRecW = 720
+            const rScale = Math.min(1, maxRecW / videoEl.videoWidth)
+            recCanvas.width = Math.round(videoEl.videoWidth * rScale)
+            recCanvas.height = Math.round(videoEl.videoHeight * rScale)
+            const rCtx = recCanvas.getContext('2d')
+
+            const drawRecFrame = () => {
+              if (!isRunningRef.current || !rCtx || !videoRef.current) return
+              rCtx.save()
+              const cssF = getCssFilter(filterRef.current)
+              if ('filter' in rCtx) {
+                rCtx.filter = cssF
+              }
+              rCtx.scale(-1, 1)
+              rCtx.drawImage(videoRef.current, -recCanvas.width, 0, recCanvas.width, recCanvas.height)
+              rCtx.restore()
+              recRafRef.current = window.requestAnimationFrame(drawRecFrame)
+            }
+            recRafRef.current = window.requestAnimationFrame(drawRecFrame)
+            recordStream = recCanvas.captureStream(24)
+            if (audioTrack) recordStream.addTrack(audioTrack)
+          } else {
+            const tracks = [...streamRef.current.getVideoTracks()]
+            if (audioTrack) tracks.push(audioTrack)
+            recordStream = new MediaStream(tracks)
+          }
+
+          const options: MediaRecorderOptions = {
+            videoBitsPerSecond: 1_500_000,
+            ...(chosenFormat.mimeType ? { mimeType: chosenFormat.mimeType } : {}),
+          }
+          const recorder = new MediaRecorder(recordStream, options)
+          mediaRecorderRef.current = recorder
+
+          recorder.ondataavailable = (ev) => {
+            if (ev.data && ev.data.size > 0) recordedChunks.push(ev.data)
+          }
+
+          recorderStoppedPromise = new Promise<Blob | null>((resolve) => {
+            recorder.onstop = () => {
+              if (recordedChunks.length === 0) {
+                resolve(null)
+                return
+              }
+              const type = chosenFormat?.mimeType || recorder.mimeType || 'video/webm'
+              resolve(new Blob(recordedChunks, { type }))
+            }
+            recorder.onerror = () => resolve(null)
+          })
+
+          recorder.start(500)
+        } catch {
+          recordingWarning =
+            recordingWarning ??
+            'Could not start video recorder on this device, but Live GIF strip was captured.'
+          recorderStoppedPromise = null
+        }
+      }
+    }
 
     for (let shot = 0; shot < poseCount; shot++) {
       if (!isMountedRef.current) break
       setCurrentShot(shot)
+
+      // Ring buffer holding the final ~1.25s of live motion leading into each pose
+      const shotBurst: string[] = []
+      if (liveCaptureEnabled) {
+        const firstSample = captureBurstFrame(burstCanvas)
+        if (firstSample) shotBurst.push(firstSample)
+        burstIntervalRef.current = window.setInterval(() => {
+          const frame = captureBurstFrame(burstCanvas)
+          if (frame) {
+            shotBurst.push(frame)
+            if (shotBurst.length > 10) shotBurst.shift()
+          }
+        }, 125)
+      }
+
       for (let t = countdownSeconds; t > 0; t--) {
         if (!isMountedRef.current) break
         setCountdown(t)
         await new Promise((r) => setTimeout(r, 980))
       }
+
+      if (burstIntervalRef.current !== null) {
+        window.clearInterval(burstIntervalRef.current)
+        burstIntervalRef.current = null
+      }
+
       if (!isMountedRef.current) break
       setCountdown(0)
       setIsFlashing(true)
@@ -283,16 +534,86 @@ export default function CameraBooth({ filter, poseCount, countdownSeconds, onFil
       await new Promise((r) => setTimeout(r, 300))
       if (!isMountedRef.current) break
       setIsFlashing(false)
-      if (photo) { shots.push(photo); setCapturedPhotos([...shots]) }
+      if (photo) {
+        shots.push(photo)
+        if (liveCaptureEnabled) {
+          liveBursts.push([...shotBurst])
+        }
+        setCapturedPhotos([...shots])
+      }
       if (shot < poseCount - 1) await new Promise((r) => setTimeout(r, 600))
     }
 
     isRunningRef.current = false
-    if (isMountedRef.current && shots.length > 0) setPhase('confirm')
-  }, [cameraReady, poseCount, countdownSeconds, captureFrame])
+    const totalSec = Math.max(1, Math.round((Date.now() - recStartedAt) / 1000))
+
+    // Stop MediaRecorder cleanly
+    if (recTimerRef.current !== null) {
+      window.clearInterval(recTimerRef.current)
+      recTimerRef.current = null
+    }
+    if (recRafRef.current !== null) {
+      window.cancelAnimationFrame(recRafRef.current)
+      recRafRef.current = null
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop()
+      } catch {
+        // ignore
+      }
+    }
+    micStreamRef.current?.getTracks().forEach((t) => t.stop())
+    micStreamRef.current = null
+    setIsRecordingActive(false)
+
+    let videoUrl: string | undefined
+    if (recorderStoppedPromise) {
+      const blob = await Promise.race([
+        recorderStoppedPromise,
+        new Promise<null>((r) => setTimeout(() => r(null), 900)),
+      ])
+      if (blob && blob.size > 0 && isMountedRef.current) {
+        videoUrl = URL.createObjectURL(blob)
+      }
+    }
+
+    if (isMountedRef.current && shots.length > 0) {
+      if (liveCaptureEnabled) {
+        setSessionVideo({
+          liveFramesPerPose: liveBursts,
+          videoUrl,
+          videoMimeType: chosenFormat?.mimeType || 'video/webm',
+          videoExt: chosenFormat?.ext || 'webm',
+          durationSec: totalSec,
+          warning: recordingWarning,
+        })
+      } else {
+        setSessionVideo(undefined)
+      }
+      setPhase('confirm')
+    } else if (videoUrl) {
+      URL.revokeObjectURL(videoUrl)
+    }
+  }, [
+    cameraReady,
+    poseCount,
+    countdownSeconds,
+    liveCaptureEnabled,
+    includeAudio,
+    sessionVideo,
+    captureFrame,
+    captureBurstFrame,
+  ])
 
   const handleRetakeConfirm = () => {
     setShowRetakeModal(false)
+    stopActiveRecordingLoops()
+    if (sessionVideo?.videoUrl) {
+      URL.revokeObjectURL(sessionVideo.videoUrl)
+    }
+    setSessionVideo(undefined)
+    setShowVideoPreview(false)
     setCapturedPhotos([])
     setCurrentShot(0)
     setCountdown(0)
@@ -301,7 +622,7 @@ export default function CameraBooth({ filter, poseCount, countdownSeconds, onFil
 
   const handleConfirm = () => {
     setPhase('done')
-    onPhotosCapture(capturedPhotos)
+    onPhotosCapture(capturedPhotos, sessionVideo)
   }
 
   const grainBg = `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`
@@ -378,17 +699,34 @@ export default function CameraBooth({ filter, poseCount, countdownSeconds, onFil
             </>
           )}
 
-          {/* Shot counter */}
+          {/* Recording indicator & Shot counter */}
           {cameraReady && phase === 'running' && (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1 text-[11px] sm:text-xs font-mono tracking-widest rounded-full whitespace-nowrap" style={{ background: 'rgba(26,20,16,0.8)', color: 'var(--cream)' }}>
-              Shot {Math.min(currentShot + 1, poseCount)} / {poseCount}
+            <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-2 pointer-events-none">
+              {isRecordingActive ? (
+                <div
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] sm:text-xs font-mono tracking-wider rounded-sm whitespace-nowrap"
+                  style={{ background: 'rgba(26,20,16,0.82)', color: 'var(--cream)' }}
+                >
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" aria-hidden="true" />
+                  <span>LIVE · {formatDuration(recElapsedSec)}</span>
+                </div>
+              ) : (
+                <span />
+              )}
+
+              <div
+                className="px-3 py-1 text-[11px] sm:text-xs font-mono tracking-widest rounded-sm whitespace-nowrap"
+                style={{ background: 'rgba(26,20,16,0.82)', color: 'var(--cream)' }}
+              >
+                Shot {Math.min(currentShot + 1, poseCount)} / {poseCount}
+              </div>
             </div>
           )}
 
           {/* Ready hint */}
           {cameraReady && phase === 'ready' && (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 max-w-[92%] px-3 py-1.5 sm:px-4 sm:py-2 rounded-full text-[10px] sm:text-xs font-display tracking-widest uppercase whitespace-nowrap truncate" style={{ background: 'rgba(26,20,16,0.72)', color: 'rgba(245,240,232,0.92)' }}>
-              Ready · {poseCount} shots · {countdownSeconds}s countdown
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 max-w-[92%] px-3 py-1.5 sm:px-4 sm:py-2 rounded-sm text-[10px] sm:text-xs font-display tracking-widest uppercase whitespace-nowrap truncate" style={{ background: 'rgba(26,20,16,0.72)', color: 'rgba(245,240,232,0.92)' }}>
+              Ready · {poseCount} shots · {countdownSeconds}s{liveCaptureEnabled ? ' · Live' : ''}
             </div>
           )}
 
@@ -542,6 +880,111 @@ export default function CameraBooth({ filter, poseCount, countdownSeconds, onFil
             </div>
           )}
         </div>
+
+        {/* Optional Live Motion & Mic Controls when Ready */}
+        {phase === 'ready' && (onLiveCaptureToggle || onAudioToggle) && (
+          <div
+            className="w-full md:w-[115%] md:-ml-[7.5%] lg:w-[130%] lg:-ml-[15%] px-3 py-2.5 rounded-sm flex flex-wrap items-center justify-between gap-2"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span style={{ color: liveCaptureEnabled ? 'var(--vintage-brown)' : 'var(--text-muted)' }}>
+                <VideoIcon />
+              </span>
+              <span className="font-display text-[11px] tracking-wider uppercase" style={{ color: 'var(--text-secondary)' }}>
+                Live Motion &amp; Video
+              </span>
+              <span className="hidden sm:inline font-body text-xs" style={{ color: 'var(--text-muted)' }}>
+                · Captures iOS Live GIF + session clip
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {liveCaptureEnabled && onAudioToggle && (
+                <button
+                  type="button"
+                  onClick={onAudioToggle}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-sm font-display text-[10px] tracking-widest uppercase transition-all active:scale-95"
+                  style={{
+                    border: '1px solid var(--border)',
+                    background: includeAudio ? 'rgba(92,61,30,0.1)' : 'var(--surface-2)',
+                    color: includeAudio ? 'var(--vintage-brown)' : 'var(--text-muted)',
+                  }}
+                  title={includeAudio ? 'Microphone audio enabled for video' : 'Silent video (no mic prompt)'}
+                >
+                  <MicIcon off={!includeAudio} />
+                  <span>{includeAudio ? 'Mic On' : 'Mic Off'}</span>
+                </button>
+              )}
+
+              {onLiveCaptureToggle && (
+                <button
+                  type="button"
+                  onClick={onLiveCaptureToggle}
+                  className={`toggle-track flex-shrink-0 ${liveCaptureEnabled ? 'on' : ''}`}
+                  aria-label="Toggle live motion and video recording"
+                >
+                  <div className="toggle-thumb" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Recorded Video Preview Drawer in Confirm Phase */}
+        {phase === 'confirm' && sessionVideo?.videoUrl && (
+          <div
+            className="w-full md:w-[115%] md:-ml-[7.5%] lg:w-[130%] lg:-ml-[15%] p-3 rounded-sm space-y-2.5"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span style={{ color: 'var(--vintage-brown)' }}><VideoIcon /></span>
+                <span className="font-display text-[11px] tracking-widest uppercase" style={{ color: 'var(--vintage-brown)' }}>
+                  Session Video ({formatDuration(sessionVideo.durationSec ?? 0)})
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowVideoPreview((v) => !v)}
+                  className="px-2.5 py-1 rounded-sm font-display text-[10px] tracking-widest uppercase"
+                  style={{ border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text-secondary)' }}
+                >
+                  {showVideoPreview ? 'Hide Clip' : 'Watch Clip'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const dateStr = new Date().toISOString().split('T')[0]
+                    downloadUrl(sessionVideo.videoUrl!, `jellybooth_session_${dateStr}.${sessionVideo.videoExt || 'webm'}`)
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-sm font-display text-[10px] tracking-widest uppercase"
+                  style={{ background: 'var(--vintage-brown)', color: 'var(--cream)' }}
+                >
+                  <DownloadIcon />
+                  Save Video
+                </button>
+              </div>
+            </div>
+
+            {sessionVideo.warning && (
+              <p className="font-body text-xs" style={{ color: 'var(--sepia)' }}>
+                {sessionVideo.warning}
+              </p>
+            )}
+
+            {showVideoPreview && (
+              <video
+                src={sessionVideo.videoUrl}
+                controls
+                playsInline
+                loop
+                className="w-full max-h-64 rounded-sm bg-black object-contain"
+              />
+            )}
+          </div>
+        )}
 
         {/* Controls */}
         {phase === 'running' && (

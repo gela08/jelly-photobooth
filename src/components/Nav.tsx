@@ -12,6 +12,7 @@ interface NavProps {
 
 const BaseLinks = [
   { href: '/', label: 'Home' },
+  { href: '/duo', label: 'Remote Duo' },
   { href: '/privacy', label: 'Privacy' },
   { href: '/terms', label: 'Terms' },
 ]

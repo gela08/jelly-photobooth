@@ -12,7 +12,7 @@ import StripDesignSelector from '@/components/StripDesignSelector'
 import StickerEditor from '@/components/StickerEditor'
 import {
   FilterType, LayoutType, PoseCount, CountdownSeconds, PhotoSession, PhotoTransform,
-  PlacedSticker, StripBorderStyle, StripDecoration, StripThemeId,
+  PlacedSticker, StripBorderStyle, StripDecoration, StripThemeId, SessionVideoData,
   DEFAULT_PHOTO_TRANSFORM, POSE_COUNT_OPTIONS, COUNTDOWN_OPTIONS, getDefaultLayout, FILTERS, ALL_LAYOUTS,
 } from '@/lib/types'
 
@@ -512,18 +512,26 @@ function SetupStep({
   layout,
   countdown,
   filter,
+  liveCaptureEnabled,
+  includeAudio,
   onPoseChange,
   onLayoutChange,
   onCountdownChange,
+  onLiveCaptureToggle,
+  onAudioToggle,
   onStart,
 }: {
   poseCount: PoseCount
   layout: LayoutType
   countdown: CountdownSeconds
   filter: FilterType
+  liveCaptureEnabled: boolean
+  includeAudio: boolean
   onPoseChange: (p: PoseCount) => void
   onLayoutChange: (l: LayoutType) => void
   onCountdownChange: (c: CountdownSeconds) => void
+  onLiveCaptureToggle: () => void
+  onAudioToggle: () => void
   onStart: () => void
 }) {
   return (
@@ -603,6 +611,52 @@ function SetupStep({
         />
       </div>
 
+      {/* Optional Live Photo & Video Capture */}
+      <div className="section-card space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="font-display text-xs tracking-widest uppercase" style={{ color: 'var(--text-secondary)' }}>
+              Live Motion &amp; Video (Optional)
+            </p>
+            <p className="font-body text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              Save a moving iOS Live-style GIF strip &amp; short session clip alongside photos
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onLiveCaptureToggle}
+            className={`toggle-track flex-shrink-0 ${liveCaptureEnabled ? 'on' : ''}`}
+            aria-label="Toggle Live Motion and Video capture"
+          >
+            <div className="toggle-thumb" />
+          </button>
+        </div>
+
+        {liveCaptureEnabled && (
+          <div
+            className="flex items-center justify-between gap-4 pt-3"
+            style={{ borderTop: '1px solid var(--border)' }}
+          >
+            <div>
+              <p className="font-display text-[11px] tracking-wide uppercase" style={{ color: 'var(--text-secondary)' }}>
+                Include Microphone Audio
+              </p>
+              <p className="font-body text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                Only for the downloadable session video clip (GIF is always silent)
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onAudioToggle}
+              className={`toggle-track flex-shrink-0 ${includeAudio ? 'on' : ''}`}
+              aria-label="Toggle microphone audio for video recording"
+            >
+              <div className="toggle-thumb" />
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Session Summary */}
       <SessionSummary
         poseCount={poseCount}
@@ -622,7 +676,7 @@ function SetupStep({
       </button>
 
       <p className="text-center text-xs font-body" style={{ color: 'var(--text-muted)', opacity: 0.65 }}>
-        {poseCount} photos · {countdown}s countdown each · fully automatic
+        {poseCount} photos · {countdown}s countdown each · {liveCaptureEnabled ? 'Live GIF & video enabled' : 'photos only'}
       </p>
     </div>
   )
@@ -643,9 +697,30 @@ export default function PhotoboothPage() {
   const [stripTheme, setStripTheme] = useState<StripThemeId>('auto')
   const [borderStyle, setBorderStyle] = useState<StripBorderStyle>('classic')
   const [stripDecoration, setStripDecoration] = useState<StripDecoration>('none')
+  const [liveCaptureEnabled, setLiveCaptureEnabled] = useState(true)
+  const [includeAudio, setIncludeAudio] = useState(false)
+  const [sessionVideo, setSessionVideo] = useState<SessionVideoData | undefined>(undefined)
   const [showPrivacy, setShowPrivacy] = useState(false)
 
+  const sessionVideoUrlRef = useRef<string | undefined>(undefined)
+  sessionVideoUrlRef.current = sessionVideo?.videoUrl
+
+  useEffect(() => {
+    return () => {
+      if (sessionVideoUrlRef.current) {
+        URL.revokeObjectURL(sessionVideoUrlRef.current)
+      }
+    }
+  }, [])
+
   const insideBooth = step === 'camera' || step === 'customize' || step === 'export'
+
+  const clearRecordedMedia = useCallback(() => {
+    setSessionVideo((prev) => {
+      if (prev?.videoUrl) URL.revokeObjectURL(prev.videoUrl)
+      return undefined
+    })
+  }, [])
 
   const handlePoseChange = (p: PoseCount) => {
     setPoseCount(p)
@@ -657,10 +732,16 @@ export default function PhotoboothPage() {
     setStep('camera')
   }
 
-  const handlePhotosCapture = useCallback((captured: string[]) => {
+  const handlePhotosCapture = useCallback((captured: string[], videoData?: SessionVideoData) => {
     setPhotos(captured)
     setPhotoTransforms(captured.map(() => ({ ...DEFAULT_PHOTO_TRANSFORM })))
     setStickers([])
+    setSessionVideo((prev) => {
+      if (prev?.videoUrl && prev.videoUrl !== videoData?.videoUrl) {
+        URL.revokeObjectURL(prev.videoUrl)
+      }
+      return videoData
+    })
     setStep('customize')
   }, [])
 
@@ -688,11 +769,18 @@ export default function PhotoboothPage() {
     stripTheme,
     borderStyle,
     stripDecoration,
+    liveFramesPerPose: sessionVideo?.liveFramesPerPose,
   }
 
   return (
     <div className="min-h-screen overflow-x-hidden film-grain select-none" style={{ background: 'var(--cream)' }}>
-      <Nav insideBooth={insideBooth} onLeaveConfirm={() => setStep('setup')} />
+      <Nav
+        insideBooth={insideBooth}
+        onLeaveConfirm={() => {
+          clearRecordedMedia()
+          setStep('setup')
+        }}
+      />
 
       <main className="pt-14">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-6 pb-8 sm:pt-8 sm:pb-10">
@@ -708,9 +796,13 @@ export default function PhotoboothPage() {
               filter={filter}
               layout={layout}
               countdown={countdown}
+              liveCaptureEnabled={liveCaptureEnabled}
+              includeAudio={includeAudio}
               onPoseChange={handlePoseChange}
               onLayoutChange={setLayout}
               onCountdownChange={setCountdown}
+              onLiveCaptureToggle={() => setLiveCaptureEnabled((v) => !v)}
+              onAudioToggle={() => setIncludeAudio((a) => !a)}
               onStart={() => setShowPrivacy(true)}
             />
           )}
@@ -721,9 +813,16 @@ export default function PhotoboothPage() {
                 filter={filter}
                 poseCount={poseCount}
                 countdownSeconds={countdown}
+                liveCaptureEnabled={liveCaptureEnabled}
+                includeAudio={includeAudio}
+                onLiveCaptureToggle={() => setLiveCaptureEnabled((v) => !v)}
+                onAudioToggle={() => setIncludeAudio((a) => !a)}
                 onFilterChange={setFilter}
                 onPhotosCapture={handlePhotosCapture}
-                onCancel={() => setStep('setup')}
+                onCancel={() => {
+                  clearRecordedMedia()
+                  setStep('setup')
+                }}
               />
             </div>
           )}
@@ -751,7 +850,10 @@ export default function PhotoboothPage() {
               onThemeChange={setStripTheme}
               onBorderChange={setBorderStyle}
               onDecorationChange={setStripDecoration}
-              onBack={() => setStep('camera')}
+              onBack={() => {
+                clearRecordedMedia()
+                setStep('camera')
+              }}
               onNext={() => setStep('export')}
             />
           )}
@@ -778,7 +880,9 @@ export default function PhotoboothPage() {
               </div>
               <ExportPanel
                 session={session}
+                sessionVideo={sessionVideo}
                 onRetake={() => {
+                  clearRecordedMedia()
                   setPhotos([])
                   setPhotoTransforms([])
                   setStickers([])
