@@ -47,7 +47,8 @@ export default function PhotoboothPage() {
   const [layout, setLayout] = useState<LayoutType>(() => getDefaultLayout(4))
   const [filter, setFilter] = useState<FilterType>('none')
   const [liveCaptureEnabled, setLiveCaptureEnabled] = useState(true)
-  const [includeAudio, setIncludeAudio] = useState(false)
+  const [includeAudio, setIncludeAudio] = useState(true)
+  const [showRetakeModal, setShowRetakeModal] = useState(false)
 
   // Captured media state
   const [photos, setPhotos] = useState<string[]>([])
@@ -93,6 +94,7 @@ export default function PhotoboothPage() {
       borderStyle,
       stripDecoration,
       liveFramesPerPose: sessionVideo?.liveFramesPerPose,
+      liveShutterFrameIndex: sessionVideo?.shutterFrameIndex,
     }),
     [
       photos,
@@ -108,8 +110,23 @@ export default function PhotoboothPage() {
       borderStyle,
       stripDecoration,
       sessionVideo?.liveFramesPerPose,
+      sessionVideo?.shutterFrameIndex,
     ]
   )
+
+  // Warn user before refreshing or closing tab if they have an active/unsaved booth session
+  useEffect(() => {
+    const hasActiveProgress = photos.length > 0 || step === 'camera' || step === 'customize' || step === 'export'
+    if (!hasActiveProgress) return
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [step, photos.length])
 
   useEffect(() => {
     if (step !== 'customize' || photos.length === 0) return
@@ -211,6 +228,56 @@ export default function PhotoboothPage() {
             >
               Close
             </button>
+          </div>
+        </div>
+      )}
+
+      {showRetakeModal && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center p-4 animate-fade-in select-none"
+          style={{ background: 'rgba(26,20,16,0.8)', backdropFilter: 'blur(5px)' }}
+          onClick={() => setShowRetakeModal(false)}
+        >
+          <div
+            className="animate-scale-in rounded-sm p-7 max-w-sm w-full text-center space-y-4"
+            style={{
+              background: 'var(--aged-white)',
+              border: '1px solid var(--border)',
+              boxShadow: '0 24px 80px rgba(0,0,0,0.4)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-display text-xl font-bold" style={{ color: 'var(--vintage-brown)' }}>
+              Retake All Photos?
+            </h3>
+            <p className="font-body text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              Your current photos, Live Photo clips, and strip customizations haven&apos;t been saved yet. Retaking will discard them.
+            </p>
+            <div className="flex gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowRetakeModal(false)}
+                className="flex-1 font-display text-xs tracking-widest uppercase py-3 rounded-sm transition-all active:scale-95"
+                style={{ border: '1px solid var(--border)', color: 'var(--vintage-brown)', background: 'var(--surface)' }}
+              >
+                Keep Strip
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRetakeModal(false)
+                  cleanupVideoUrl()
+                  setSessionVideo(undefined)
+                  setPhotos([])
+                  setPreviewUrl(null)
+                  setStep('camera')
+                }}
+                className="flex-1 font-display text-xs tracking-widest uppercase py-3 rounded-sm transition-all active:scale-95"
+                style={{ background: 'var(--vintage-brown)', color: 'var(--cream)' }}
+              >
+                Yes, Retake
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -323,10 +390,10 @@ export default function PhotoboothPage() {
               <div className="section-card flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <p className="font-display text-xs tracking-widest uppercase" style={{ color: 'var(--vintage-brown)' }}>
-                    Live Motion &amp; Session Video
+                    iOS Live Photo (3s Motion &amp; Audio)
                   </p>
                   <p className="font-body text-xs mt-0.5" style={{ color: 'var(--warm-gray)' }}>
-                    Record short burst motion for an animated Live Strip GIF plus a downloadable session clip.
+                    Captures 1.5s of video and audio before &amp; after every shutter for a 3-second moving strip, GIF, and video clip.
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -399,12 +466,7 @@ export default function PhotoboothPage() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      cleanupVideoUrl()
-                      setSessionVideo(undefined)
-                      setPhotos([])
-                      setStep('camera')
-                    }}
+                    onClick={() => setShowRetakeModal(true)}
                     className="px-4 py-2.5 rounded-sm font-display text-[11px] tracking-widest uppercase transition-all active:scale-95"
                     style={{ border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-secondary)' }}
                   >
