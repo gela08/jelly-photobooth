@@ -6,6 +6,8 @@ import FilterSelector from '@/components/FilterSelector'
 import LivePhotoViewer, { LivePhotoBadge } from '@/components/LivePhotoPlayer'
 import { RollingLivePhotoBuffer } from '@/lib/livePhotoCapture'
 import {
+  computeHdVideoDimensions,
+  createHdMediaRecorder,
   downloadUrl,
   formatDuration,
   selectSupportedVideoMimeType,
@@ -320,15 +322,27 @@ export default function CameraBooth({
       let stream: MediaStream
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 960 }, facingMode: 'user' },
+          video: {
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            frameRate: { ideal: 30 },
+            facingMode: 'user',
+          },
           audio: false,
         })
       } catch {
-        // Fallback for mobile devices that reject explicit ideal dimensions
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user' },
-          audio: false,
-        })
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1280 }, height: { ideal: 960 }, facingMode: 'user' },
+            audio: false,
+          })
+        } catch {
+          // Fallback for mobile devices that reject explicit ideal dimensions
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user' },
+            audio: false,
+          })
+        }
       }
       if (!isMountedRef.current) { stream.getTracks().forEach((t) => t.stop()); return }
       streamRef.current = stream
@@ -619,15 +633,16 @@ export default function CameraBooth({
             typeof (document.createElement('canvas') as HTMLCanvasElement & { captureStream?: (fps?: number) => MediaStream }).captureStream === 'function'
           ) {
             const recCanvas = document.createElement('canvas')
-            const maxRecW = 720
-            const rScale = Math.min(1, maxRecW / videoEl.videoWidth)
-            recCanvas.width = Math.round(videoEl.videoWidth * rScale)
-            recCanvas.height = Math.round(videoEl.videoHeight * rScale)
+            const hdSize = computeHdVideoDimensions(videoEl.videoWidth, videoEl.videoHeight)
+            recCanvas.width = hdSize.width
+            recCanvas.height = hdSize.height
             const rCtx = recCanvas.getContext('2d')
 
             const drawRecFrame = () => {
               if (!isRunningRef.current || !rCtx || !videoRef.current) return
               rCtx.save()
+              rCtx.imageSmoothingEnabled = true
+              rCtx.imageSmoothingQuality = 'high'
               const cssF = getCssFilter(filterRef.current)
               if ('filter' in rCtx) {
                 rCtx.filter = cssF
@@ -638,7 +653,7 @@ export default function CameraBooth({
               recRafRef.current = window.requestAnimationFrame(drawRecFrame)
             }
             recRafRef.current = window.requestAnimationFrame(drawRecFrame)
-            recordStream = recCanvas.captureStream(24)
+            recordStream = recCanvas.captureStream(30)
             if (audioTrack) recordStream.addTrack(audioTrack)
           } else {
             const tracks = [...streamRef.current.getVideoTracks()]
@@ -646,11 +661,11 @@ export default function CameraBooth({
             recordStream = new MediaStream(tracks)
           }
 
-          const options: MediaRecorderOptions = {
-            videoBitsPerSecond: 1_500_000,
-            ...(chosenFormat.mimeType ? { mimeType: chosenFormat.mimeType } : {}),
-          }
-          const recorder = new MediaRecorder(recordStream, options)
+          const recorder = createHdMediaRecorder(
+            recordStream,
+            chosenFormat.mimeType,
+            Boolean(audioTrack)
+          )
           mediaRecorderRef.current = recorder
 
           recorder.ondataavailable = (ev) => {

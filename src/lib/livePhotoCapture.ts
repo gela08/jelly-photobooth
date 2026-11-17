@@ -1,5 +1,10 @@
 import { FILTERS, FilterType, LivePhotoItem } from './types'
-import { downloadUrl, selectSupportedVideoMimeType } from './liveExport'
+import {
+  computeHdVideoDimensions,
+  createHdMediaRecorder,
+  downloadUrl,
+  selectSupportedVideoMimeType,
+} from './liveExport'
 
 function getCssFilter(filterId: FilterType): string {
   return FILTERS.find((f) => f.id === filterId)?.cssFilter ?? 'none'
@@ -128,16 +133,17 @@ export class RollingLivePhotoBuffer {
 
         if (supportsCapture) {
           const recCanvas = document.createElement('canvas')
-          const maxW = 720
-          const scale = Math.min(1, maxW / Math.max(1, videoEl.videoWidth))
-          recCanvas.width = Math.max(320, Math.round(videoEl.videoWidth * scale))
-          recCanvas.height = Math.max(240, Math.round(videoEl.videoHeight * scale))
+          const hdSize = computeHdVideoDimensions(videoEl.videoWidth, videoEl.videoHeight)
+          recCanvas.width = hdSize.width
+          recCanvas.height = hdSize.height
           this.recCanvas = recCanvas
           const rCtx = recCanvas.getContext('2d')
 
           const drawLoop = () => {
             if (!this.running || !rCtx || !this.videoEl || this.videoEl.videoWidth === 0) return
             rCtx.save()
+            rCtx.imageSmoothingEnabled = true
+            rCtx.imageSmoothingQuality = 'high'
             const cssF = getCssFilter(this.filterGetter())
             if ('filter' in rCtx) {
               rCtx.filter = cssF
@@ -151,7 +157,7 @@ export class RollingLivePhotoBuffer {
 
           const stream = (
             recCanvas as HTMLCanvasElement & { captureStream: (fps?: number) => MediaStream }
-          ).captureStream(24)
+          ).captureStream(30)
           if (audioTrack) stream.addTrack(audioTrack)
           this.combinedStream = stream
         } else {
@@ -214,11 +220,11 @@ export class RollingLivePhotoBuffer {
       return null
     }
     try {
-      const options: MediaRecorderOptions = {
-        videoBitsPerSecond: 1_500_000,
-        ...(this.mimeInfo.mimeType ? { mimeType: this.mimeInfo.mimeType } : {}),
-      }
-      const recorder = new MediaRecorder(this.combinedStream, options)
+      const recorder = createHdMediaRecorder(
+        this.combinedStream,
+        this.mimeInfo.mimeType,
+        this.hasAudio
+      )
       const chunks: Blob[] = []
       let resolveStopped!: (blob: Blob | null) => void
       const stopped = new Promise<Blob | null>((resolve) => {
