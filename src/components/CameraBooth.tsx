@@ -1,8 +1,10 @@
 'use client'; // This is the magic fix
 
 import { useRef, useState, useCallback, useEffect } from 'react'
-import { FilterType, FILTERS, CountdownSeconds, SessionVideoData } from '@/lib/types'
+import { FilterType, FILTERS, CountdownSeconds, LivePhotoItem, SessionVideoData } from '@/lib/types'
 import FilterSelector from '@/components/FilterSelector'
+import LivePhotoViewer, { LivePhotoBadge } from '@/components/LivePhotoPlayer'
+import { RollingLivePhotoBuffer } from '@/lib/livePhotoCapture'
 import {
   downloadUrl,
   formatDuration,
@@ -14,11 +16,14 @@ interface CameraBoothProps {
   poseCount: number
   countdownSeconds: CountdownSeconds
   liveCaptureEnabled?: boolean
+  livePhotoEnabled?: boolean
   includeAudio?: boolean
   onLiveCaptureToggle?: () => void
+  onLivePhotoToggle?: () => void
   onAudioToggle?: () => void
   onFilterChange: (f: FilterType) => void
   onPhotosCapture: (photos: string[], videoData?: SessionVideoData) => void
+  onHasUnsavedShotsChange?: (hasUnsaved: boolean) => void
   onCancel: () => void
 }
 
@@ -161,8 +166,22 @@ function RetakeModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel:
 }
 
 // ── Photo lightbox ─────────────────────────────────────────────────────────
-function PhotoLightbox({ photo, index, total, cssFilter, onClose }: {
-  photo: string; index: number; total: number; cssFilter: string; onClose: () => void
+function PhotoLightbox({
+  photo,
+  livePhoto,
+  filter,
+  index,
+  total,
+  cssFilter,
+  onClose,
+}: {
+  photo: string
+  livePhoto?: LivePhotoItem
+  filter: FilterType
+  index: number
+  total: number
+  cssFilter: string
+  onClose: () => void
 }) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -177,24 +196,45 @@ function PhotoLightbox({ photo, index, total, cssFilter, onClose }: {
       onClick={onClose}
     >
       <div className="animate-scale-in relative" onClick={e => e.stopPropagation()}>
-        <img
-          src={photo}
-          alt={`Photo ${index + 1}`}
-          className="rounded-sm"
-          style={{
-            maxWidth: 'min(90vw, 560px)',
-            maxHeight: 'min(80vh, 640px)',
-            objectFit: 'contain',
-            border: '5px solid white',
-            boxShadow: '0 24px 80px rgba(0,0,0,0.7)',
-            filter: cssFilter,
-          }}
-        />
+        {livePhoto?.videoUrl ? (
+          <div
+            className="rounded-sm overflow-hidden"
+            style={{
+              width: 'min(90vw, 560px)',
+              aspectRatio: '4/3',
+              maxHeight: 'min(80vh, 640px)',
+              border: '5px solid white',
+              boxShadow: '0 24px 80px rgba(0,0,0,0.7)',
+              background: '#000',
+            }}
+          >
+            <LivePhotoViewer
+              item={livePhoto}
+              filter={filter}
+              poseNumber={index + 1}
+              className="w-full h-full"
+            />
+          </div>
+        ) : (
+          <img
+            src={photo}
+            alt={`Photo ${index + 1}`}
+            className="rounded-sm"
+            style={{
+              maxWidth: 'min(90vw, 560px)',
+              maxHeight: 'min(80vh, 640px)',
+              objectFit: 'contain',
+              border: '5px solid white',
+              boxShadow: '0 24px 80px rgba(0,0,0,0.7)',
+              filter: cssFilter,
+            }}
+          />
+        )}
         <div
           className="absolute -bottom-8 left-0 right-0 text-center font-display text-xs tracking-widest uppercase"
           style={{ color: 'rgba(245,240,232,0.5)' }}
         >
-          Photo {index + 1} of {total}
+          Photo {index + 1} of {total}{livePhoto?.videoUrl ? ' · Live Photo' : ''}
         </div>
         <button
           onClick={onClose}
@@ -215,11 +255,14 @@ export default function CameraBooth({
   poseCount,
   countdownSeconds,
   liveCaptureEnabled = true,
+  livePhotoEnabled = false,
   includeAudio = false,
   onLiveCaptureToggle,
+  onLivePhotoToggle,
   onAudioToggle,
   onFilterChange,
   onPhotosCapture,
+  onHasUnsavedShotsChange,
   onCancel,
 }: CameraBoothProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -237,12 +280,22 @@ export default function CameraBooth({
   const filterRef = useRef(filter)
   filterRef.current = filter
 
+  // Rolling Live Photo buffer refs
+  const rollingBufferRef = useRef<RollingLivePhotoBuffer | null>(null)
+  const snapNowResolveRef = useRef<(() => void) | null>(null)
+  const confirmedTransferRef = useRef(false)
+  const livePhotoUrlsRef = useRef<string[]>([])
+
   const [phase, setPhase] = useState<BoothPhase>('ready')
   const [capturedPhotos, setCapturedPhotos] = useState<string[]>([])
+  const [capturedLivePhotos, setCapturedLivePhotos] = useState<LivePhotoItem[]>([])
   const [sessionVideo, setSessionVideo] = useState<SessionVideoData | undefined>(undefined)
   const [showVideoPreview, setShowVideoPreview] = useState(false)
   const [recElapsedSec, setRecElapsedSec] = useState(0)
   const [isRecordingActive, setIsRecordingActive] = useState(false)
+  const [isCapturingPostRoll, setIsCapturingPostRoll] = useState(false)
+  const [liveBufferNotice, setLiveBufferNotice] = useState<string | null>(null)
+  const [liveBufferAudioReady, setLiveBufferAudioReady] = useState(false)
   const [currentShot, setCurrentShot] = useState(0)
   const [countdown, setCountdown] = useState(0)
   const [isFlashing, setIsFlashing] = useState(false)
@@ -306,6 +359,13 @@ export default function CameraBooth({
     }
   }, [])
 
+  const revokePendingLivePhotos = useCallback(() => {
+    for (const u of livePhotoUrlsRef.current) {
+      URL.revokeObjectURL(u)
+    }
+    livePhotoUrlsRef.current = []
+  }, [])
+
   const stopActiveRecordingLoops = useCallback(() => {
     if (burstIntervalRef.current !== null) {
       window.clearInterval(burstIntervalRef.current)
@@ -328,18 +388,65 @@ export default function CameraBooth({
     }
     micStreamRef.current?.getTracks().forEach((t) => t.stop())
     micStreamRef.current = null
+    rollingBufferRef.current?.stop()
+    rollingBufferRef.current = null
     setIsRecordingActive(false)
+    setIsCapturingPostRoll(false)
   }, [])
 
   useEffect(() => {
     isMountedRef.current = true
+    confirmedTransferRef.current = false
     startCamera()
     return () => {
       isMountedRef.current = false
       stopActiveRecordingLoops()
+      if (!confirmedTransferRef.current) {
+        revokePendingLivePhotos()
+      }
       streamRef.current?.getTracks().forEach((t) => t.stop())
     }
-  }, [startCamera, stopActiveRecordingLoops])
+  }, [startCamera, stopActiveRecordingLoops, revokePendingLivePhotos])
+
+  // Notify parent when unsaved shots exist inside CameraBooth
+  useEffect(() => {
+    onHasUnsavedShotsChange?.(capturedPhotos.length > 0 && phase !== 'done')
+  }, [capturedPhotos.length, phase, onHasUnsavedShotsChange])
+
+  // Start or stop continuous rolling Live Photo pre-shutter buffer
+  useEffect(() => {
+    if (!cameraReady || !livePhotoEnabled || (phase !== 'ready' && phase !== 'running')) {
+      rollingBufferRef.current?.stop()
+      rollingBufferRef.current = null
+      setLiveBufferAudioReady(false)
+      return
+    }
+    const videoEl = videoRef.current
+    const camStream = streamRef.current
+    if (!videoEl || !camStream) return
+
+    let cancelled = false
+    const buffer = new RollingLivePhotoBuffer(() => filterRef.current)
+    rollingBufferRef.current = buffer
+    setLiveBufferNotice(null)
+
+    buffer.start(videoEl, camStream, includeAudio).then((res) => {
+      if (cancelled) {
+        buffer.stop()
+        return
+      }
+      setLiveBufferAudioReady(res.hasAudio)
+      if (res.warning) setLiveBufferNotice(res.warning)
+    })
+
+    return () => {
+      cancelled = true
+      buffer.stop()
+      if (rollingBufferRef.current === buffer) {
+        rollingBufferRef.current = null
+      }
+    }
+  }, [cameraReady, livePhotoEnabled, includeAudio, phase])
 
   // Capture clean mirrored frame (filters are applied non-destructively in preview/export)
   const captureFrame = useCallback((): string | null => {
@@ -374,11 +481,84 @@ export default function CameraBooth({
     return burstCanvas.toDataURL('image/jpeg', 0.78)
   }, [])
 
+  const captureManualLiveShot = useCallback(async () => {
+    if (isRunningRef.current || !cameraReady || !livePhotoEnabled) return
+    isRunningRef.current = true
+    setIsCapturingPostRoll(true)
+    setIsFlashing(true)
+
+    const still = captureFrame()
+    await new Promise((r) => setTimeout(r, 240))
+    if (!isMountedRef.current) { isRunningRef.current = false; return }
+    setIsFlashing(false)
+
+    if (!still) {
+      isRunningRef.current = false
+      setIsCapturingPostRoll(false)
+      return
+    }
+
+    let item: LivePhotoItem
+    if (rollingBufferRef.current?.isRunning()) {
+      item = await rollingBufferRef.current.captureAtShutter(still)
+    } else {
+      item = {
+        id: `lp_${Date.now()}`,
+        stillUrl: still,
+        durationSec: 0,
+        keyPhotoOffsetSec: 0,
+        hasAudio: false,
+        burstFrames: [still],
+      }
+    }
+
+    if (!isMountedRef.current) {
+      if (item.videoUrl) URL.revokeObjectURL(item.videoUrl)
+      isRunningRef.current = false
+      return
+    }
+
+    if (item.videoUrl) livePhotoUrlsRef.current.push(item.videoUrl)
+
+    const nextShots = [...capturedPhotos, still]
+    const nextLivePhotos = [...capturedLivePhotos, item]
+    setCapturedPhotos(nextShots)
+    setCapturedLivePhotos(nextLivePhotos)
+    setCurrentShot(nextShots.length)
+    setIsCapturingPostRoll(false)
+    isRunningRef.current = false
+
+    if (nextShots.length >= poseCount) {
+      rollingBufferRef.current?.stop()
+      rollingBufferRef.current = null
+      const liveFramesPerPose = nextLivePhotos.map((lp) => lp.burstFrames ?? [lp.stillUrl])
+      const firstWarning = nextLivePhotos.find((lp) => lp.warning)?.warning ?? liveBufferNotice ?? undefined
+      setSessionVideo({
+        liveFramesPerPose,
+        livePhotos: nextLivePhotos,
+        durationSec: Math.round(nextLivePhotos.reduce((sum, lp) => sum + lp.durationSec, 0)),
+        warning: firstWarning,
+      })
+      setPhase('confirm')
+    }
+  }, [
+    cameraReady,
+    livePhotoEnabled,
+    captureFrame,
+    capturedPhotos,
+    capturedLivePhotos,
+    poseCount,
+    liveBufferNotice,
+  ])
+
   const startSession = useCallback(async () => {
     if (isRunningRef.current || !cameraReady) return
     isRunningRef.current = true
     setPhase('running')
     setShowVideoPreview(false)
+    setCapturedPhotos([])
+    setCapturedLivePhotos([])
+    revokePendingLivePhotos()
 
     if (sessionVideo?.videoUrl) {
       URL.revokeObjectURL(sessionVideo.videoUrl)
@@ -386,6 +566,7 @@ export default function CameraBooth({
     }
 
     const shots: string[] = []
+    const livePhotosList: LivePhotoItem[] = []
     const liveBursts: string[][] = []
     const burstCanvas = document.createElement('canvas')
 
@@ -406,7 +587,7 @@ export default function CameraBooth({
       }, 400)
 
       let audioTrack: MediaStreamTrack | null = null
-      if (includeAudio && navigator.mediaDevices?.getUserMedia) {
+      if (includeAudio && !livePhotoEnabled && navigator.mediaDevices?.getUserMedia) {
         try {
           const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
           if (isMountedRef.current) {
@@ -502,9 +683,9 @@ export default function CameraBooth({
       if (!isMountedRef.current) break
       setCurrentShot(shot)
 
-      // Ring buffer holding the final ~1.25s of live motion leading into each pose
+      // Ring buffer holding the final ~1.25s of live motion leading into each pose (when Live Photo rolling buffer isn't handling it)
       const shotBurst: string[] = []
-      if (liveCaptureEnabled) {
+      if (liveCaptureEnabled && !livePhotoEnabled) {
         const firstSample = captureBurstFrame(burstCanvas)
         if (firstSample) shotBurst.push(firstSample)
         burstIntervalRef.current = window.setInterval(() => {
@@ -516,11 +697,24 @@ export default function CameraBooth({
         }, 125)
       }
 
+      let snappedEarly = false
       for (let t = countdownSeconds; t > 0; t--) {
-        if (!isMountedRef.current) break
+        if (!isMountedRef.current || snappedEarly) break
         setCountdown(t)
-        await new Promise((r) => setTimeout(r, 980))
+        await new Promise<void>((resolve) => {
+          const timer = window.setTimeout(() => {
+            snapNowResolveRef.current = null
+            resolve()
+          }, 980)
+          snapNowResolveRef.current = () => {
+            window.clearTimeout(timer)
+            snappedEarly = true
+            snapNowResolveRef.current = null
+            resolve()
+          }
+        })
       }
+      snapNowResolveRef.current = null
 
       if (burstIntervalRef.current !== null) {
         window.clearInterval(burstIntervalRef.current)
@@ -531,16 +725,50 @@ export default function CameraBooth({
       setCountdown(0)
       setIsFlashing(true)
       const photo = captureFrame()
-      await new Promise((r) => setTimeout(r, 300))
-      if (!isMountedRef.current) break
-      setIsFlashing(false)
-      if (photo) {
-        shots.push(photo)
-        if (liveCaptureEnabled) {
-          liveBursts.push([...shotBurst])
+
+      if (livePhotoEnabled && photo) {
+        // Flash briefly while continuing to capture ~1.5s AFTER the shutter timestamp
+        window.setTimeout(() => {
+          if (isMountedRef.current) setIsFlashing(false)
+        }, 280)
+        setIsCapturingPostRoll(true)
+        let lpItem: LivePhotoItem
+        if (rollingBufferRef.current?.isRunning()) {
+          lpItem = await rollingBufferRef.current.captureAtShutter(photo)
+        } else {
+          lpItem = {
+            id: `lp_${Date.now()}_${shot}`,
+            stillUrl: photo,
+            durationSec: 0,
+            keyPhotoOffsetSec: 0,
+            hasAudio: false,
+            burstFrames: [photo],
+          }
         }
+        if (!isMountedRef.current) {
+          if (lpItem.videoUrl) URL.revokeObjectURL(lpItem.videoUrl)
+          break
+        }
+        setIsCapturingPostRoll(false)
+        if (lpItem.videoUrl) livePhotoUrlsRef.current.push(lpItem.videoUrl)
+        shots.push(photo)
+        livePhotosList.push(lpItem)
+        liveBursts.push(lpItem.burstFrames ?? [photo])
         setCapturedPhotos([...shots])
+        setCapturedLivePhotos([...livePhotosList])
+      } else {
+        await new Promise((r) => setTimeout(r, 300))
+        if (!isMountedRef.current) break
+        setIsFlashing(false)
+        if (photo) {
+          shots.push(photo)
+          if (liveCaptureEnabled) {
+            liveBursts.push([...shotBurst])
+          }
+          setCapturedPhotos([...shots])
+        }
       }
+
       if (shot < poseCount - 1) await new Promise((r) => setTimeout(r, 600))
     }
 
@@ -565,7 +793,10 @@ export default function CameraBooth({
     }
     micStreamRef.current?.getTracks().forEach((t) => t.stop())
     micStreamRef.current = null
+    rollingBufferRef.current?.stop()
+    rollingBufferRef.current = null
     setIsRecordingActive(false)
+    setIsCapturingPostRoll(false)
 
     let videoUrl: string | undefined
     if (recorderStoppedPromise) {
@@ -579,14 +810,21 @@ export default function CameraBooth({
     }
 
     if (isMountedRef.current && shots.length > 0) {
-      if (liveCaptureEnabled) {
+      const finalWarning =
+        recordingWarning ??
+        livePhotosList.find((lp) => lp.warning)?.warning ??
+        liveBufferNotice ??
+        undefined
+
+      if (liveCaptureEnabled || livePhotoEnabled) {
         setSessionVideo({
           liveFramesPerPose: liveBursts,
+          livePhotos: livePhotoEnabled ? livePhotosList : undefined,
           videoUrl,
           videoMimeType: chosenFormat?.mimeType || 'video/webm',
           videoExt: chosenFormat?.ext || 'webm',
           durationSec: totalSec,
-          warning: recordingWarning,
+          warning: finalWarning,
         })
       } else {
         setSessionVideo(undefined)
@@ -600,27 +838,33 @@ export default function CameraBooth({
     poseCount,
     countdownSeconds,
     liveCaptureEnabled,
+    livePhotoEnabled,
     includeAudio,
     sessionVideo,
+    liveBufferNotice,
     captureFrame,
     captureBurstFrame,
+    revokePendingLivePhotos,
   ])
 
   const handleRetakeConfirm = () => {
     setShowRetakeModal(false)
     stopActiveRecordingLoops()
+    revokePendingLivePhotos()
     if (sessionVideo?.videoUrl) {
       URL.revokeObjectURL(sessionVideo.videoUrl)
     }
     setSessionVideo(undefined)
     setShowVideoPreview(false)
     setCapturedPhotos([])
+    setCapturedLivePhotos([])
     setCurrentShot(0)
     setCountdown(0)
     setPhase('ready')
   }
 
   const handleConfirm = () => {
+    confirmedTransferRef.current = true
     setPhase('done')
     onPhotosCapture(capturedPhotos, sessionVideo)
   }
@@ -640,6 +884,8 @@ export default function CameraBooth({
       {lightboxPhoto && (
         <PhotoLightbox
           photo={lightboxPhoto.photo}
+          livePhoto={capturedLivePhotos[lightboxPhoto.index]}
+          filter={filter}
           index={lightboxPhoto.index}
           total={capturedPhotos.length}
           cssFilter={getCssFilter(filter)}
@@ -702,13 +948,19 @@ export default function CameraBooth({
           {/* Recording indicator & Shot counter */}
           {cameraReady && phase === 'running' && (
             <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-2 pointer-events-none">
-              {isRecordingActive ? (
+              {(isRecordingActive || isCapturingPostRoll || livePhotoEnabled) ? (
                 <div
                   className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] sm:text-xs font-mono tracking-wider rounded-sm whitespace-nowrap"
                   style={{ background: 'rgba(26,20,16,0.82)', color: 'var(--cream)' }}
                 >
                   <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" aria-hidden="true" />
-                  <span>LIVE · {formatDuration(recElapsedSec)}</span>
+                  <span>
+                    {isCapturingPostRoll
+                      ? 'LIVE PHOTO · +1.5s'
+                      : livePhotoEnabled
+                        ? `LIVE BUFFER · ${formatDuration(recElapsedSec)}`
+                        : `LIVE · ${formatDuration(recElapsedSec)}`}
+                  </span>
                 </div>
               ) : (
                 <span />
@@ -726,7 +978,7 @@ export default function CameraBooth({
           {/* Ready hint */}
           {cameraReady && phase === 'ready' && (
             <div className="absolute top-3 left-1/2 -translate-x-1/2 max-w-[92%] px-3 py-1.5 sm:px-4 sm:py-2 rounded-sm text-[10px] sm:text-xs font-display tracking-widest uppercase whitespace-nowrap truncate" style={{ background: 'rgba(26,20,16,0.72)', color: 'rgba(245,240,232,0.92)' }}>
-              Ready · {poseCount} shots · {countdownSeconds}s{liveCaptureEnabled ? ' · Live' : ''}
+              Ready · {poseCount} shots · {countdownSeconds}s{livePhotoEnabled ? ' · Live Photo' : liveCaptureEnabled ? ' · Live' : ''}
             </div>
           )}
 
@@ -822,6 +1074,11 @@ export default function CameraBooth({
                         className="w-full h-full object-cover"
                         style={{ filter: getCssFilter(filter) }}
                       />
+                      {capturedLivePhotos[i]?.videoUrl && (
+                        <div className="absolute top-1 left-1 pointer-events-none">
+                          <LivePhotoBadge compact />
+                        </div>
+                      )}
                       {isClickable && (
                         <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-150"
                           style={{ background: 'rgba(26,20,16,0.5)' }}>
@@ -881,53 +1138,106 @@ export default function CameraBooth({
           )}
         </div>
 
-        {/* Optional Live Motion & Mic Controls when Ready */}
-        {phase === 'ready' && (onLiveCaptureToggle || onAudioToggle) && (
+        {/* Optional Live Motion, Live Photo & Mic Controls when Ready */}
+        {phase === 'ready' && (onLiveCaptureToggle || onLivePhotoToggle || onAudioToggle) && (
           <div
-            className="w-full lg:w-[120%] lg:-ml-[10%] px-3 py-2.5 rounded-sm flex flex-wrap items-center justify-between gap-2"
+            className="w-full lg:w-[120%] lg:-ml-[10%] px-3 py-2.5 rounded-sm space-y-2"
             style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
           >
-            <div className="flex items-center gap-2 min-w-0">
-              <span style={{ color: liveCaptureEnabled ? 'var(--vintage-brown)' : 'var(--text-muted)' }}>
-                <VideoIcon />
-              </span>
-              <span className="font-display text-[11px] tracking-wider uppercase" style={{ color: 'var(--text-secondary)' }}>
-                Live Motion &amp; Video
-              </span>
-              <span className="hidden sm:inline font-body text-xs" style={{ color: 'var(--text-muted)' }}>
-                · Captures iOS Live GIF + session clip
-              </span>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span style={{ color: liveCaptureEnabled ? 'var(--vintage-brown)' : 'var(--text-muted)' }}>
+                  <VideoIcon />
+                </span>
+                <span className="font-display text-[11px] tracking-wider uppercase" style={{ color: 'var(--text-secondary)' }}>
+                  Live Motion &amp; Video
+                </span>
+                <span className="hidden sm:inline font-body text-xs" style={{ color: 'var(--text-muted)' }}>
+                  · Captures iOS Live GIF + session clip
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {(liveCaptureEnabled || livePhotoEnabled) && onAudioToggle && (
+                  <button
+                    type="button"
+                    onClick={onAudioToggle}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-sm font-display text-[10px] tracking-widest uppercase transition-all active:scale-95"
+                    style={{
+                      border: '1px solid var(--border)',
+                      background: includeAudio ? 'rgba(92,61,30,0.1)' : 'var(--surface-2)',
+                      color: includeAudio ? 'var(--vintage-brown)' : 'var(--text-muted)',
+                    }}
+                    title={includeAudio ? 'Microphone audio enabled' : 'Silent (no mic prompt)'}
+                  >
+                    <MicIcon off={!includeAudio} />
+                    <span>{includeAudio ? (livePhotoEnabled && liveBufferAudioReady ? 'Mic Live' : 'Mic On') : 'Mic Off'}</span>
+                  </button>
+                )}
+
+                {onLiveCaptureToggle && (
+                  <button
+                    type="button"
+                    onClick={onLiveCaptureToggle}
+                    className={`toggle-track flex-shrink-0 ${liveCaptureEnabled ? 'on' : ''}`}
+                    aria-label="Toggle live motion and video recording"
+                  >
+                    <div className="toggle-thumb" />
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              {liveCaptureEnabled && onAudioToggle && (
-                <button
-                  type="button"
-                  onClick={onAudioToggle}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-sm font-display text-[10px] tracking-widest uppercase transition-all active:scale-95"
-                  style={{
-                    border: '1px solid var(--border)',
-                    background: includeAudio ? 'rgba(92,61,30,0.1)' : 'var(--surface-2)',
-                    color: includeAudio ? 'var(--vintage-brown)' : 'var(--text-muted)',
-                  }}
-                  title={includeAudio ? 'Microphone audio enabled for video' : 'Silent video (no mic prompt)'}
-                >
-                  <MicIcon off={!includeAudio} />
-                  <span>{includeAudio ? 'Mic On' : 'Mic Off'}</span>
-                </button>
-              )}
+            {onLivePhotoToggle && (
+              <div
+                className="flex flex-wrap items-center justify-between gap-2 pt-2"
+                style={{ borderTop: '1px solid var(--border)' }}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <LivePhotoBadge compact />
+                  <span className="font-display text-[11px] tracking-wider uppercase" style={{ color: 'var(--text-secondary)' }}>
+                    iOS Live Photo Mode
+                  </span>
+                  <span className="hidden sm:inline font-body text-xs" style={{ color: 'var(--text-muted)' }}>
+                    · 1.5s before + 1.5s after each shutter
+                  </span>
+                </div>
 
-              {onLiveCaptureToggle && (
-                <button
-                  type="button"
-                  onClick={onLiveCaptureToggle}
-                  className={`toggle-track flex-shrink-0 ${liveCaptureEnabled ? 'on' : ''}`}
-                  aria-label="Toggle live motion and video recording"
-                >
-                  <div className="toggle-thumb" />
-                </button>
-              )}
-            </div>
+                <div className="flex items-center gap-2">
+                  {livePhotoEnabled && cameraReady && (
+                    <button
+                      type="button"
+                      disabled={isCapturingPostRoll}
+                      onClick={captureManualLiveShot}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-sm font-display text-[10px] tracking-widest uppercase transition-all active:scale-95 disabled:opacity-50"
+                      style={{
+                        background: 'var(--sepia)',
+                        color: 'var(--cream)',
+                      }}
+                      title="Capture one Live Photo immediately using the rolling buffer"
+                    >
+                      <CameraIcon size={12} />
+                      <span>{isCapturingPostRoll ? 'Capturing +1.5s…' : `Snap Shot ${capturedPhotos.length + 1}/${poseCount}`}</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={onLivePhotoToggle}
+                    className={`toggle-track flex-shrink-0 ${livePhotoEnabled ? 'on' : ''}`}
+                    aria-label="Toggle iOS Live Photo mode"
+                  >
+                    <div className="toggle-thumb" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {livePhotoEnabled && liveBufferNotice && (
+              <p className="font-body text-[11px]" style={{ color: 'var(--sepia)' }}>
+                {liveBufferNotice}
+              </p>
+            )}
           </div>
         )}
 
@@ -988,7 +1298,7 @@ export default function CameraBooth({
 
         {/* Controls */}
         {phase === 'running' && (
-          <div className="flex items-center justify-center gap-3 py-2">
+          <div className="flex flex-wrap items-center justify-center gap-3 py-2">
             {Array.from({ length: poseCount }).map((_, i) => (
               <div key={i} className={`w-2 h-2 rounded-full transition-all duration-300 ${i < capturedPhotos.length ? '' :
                   i === currentShot ? 'scale-125 animate-pulse' : ''
@@ -999,8 +1309,22 @@ export default function CameraBooth({
                 }} />
             ))}
             <span className="ml-2 font-display text-xs tracking-widest uppercase" style={{ color: 'var(--text-muted)' }}>
-              {countdown > 0 ? `Shooting in ${countdown}…` : 'Hold still!'}
+              {isCapturingPostRoll
+                ? 'Capturing Live Photo (+1.5s)…'
+                : countdown > 0
+                  ? `Shooting in ${countdown}…`
+                  : 'Hold still!'}
             </span>
+            {livePhotoEnabled && countdown > 0 && !isCapturingPostRoll && (
+              <button
+                type="button"
+                onClick={() => snapNowResolveRef.current?.()}
+                className="px-3 py-1 rounded-sm font-display text-[10px] tracking-widest uppercase transition-all active:scale-95"
+                style={{ background: 'var(--vintage-brown)', color: 'var(--cream)' }}
+              >
+                Snap Now
+              </button>
+            )}
           </div>
         )}
 

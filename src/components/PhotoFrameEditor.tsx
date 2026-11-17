@@ -6,10 +6,12 @@ import {
   FILTERS,
   FilterType,
   LayoutType,
+  LivePhotoItem,
   PhotoTransform,
   PoseCount,
   getLayoutSlotAspectRatios,
 } from '@/lib/types'
+import { LivePhotoBadge } from '@/components/LivePhotoPlayer'
 
 interface PhotoFrameEditorProps {
   photos: string[]
@@ -17,6 +19,7 @@ interface PhotoFrameEditorProps {
   layout: LayoutType
   poseCount: PoseCount
   filter: FilterType
+  livePhotos?: LivePhotoItem[]
   onChange: (index: number, next: PhotoTransform) => void
   onResetAll: () => void
   onEnlarge: (index: number) => void
@@ -61,6 +64,7 @@ interface FrameSlotProps {
   cssFilter: string
   transform: PhotoTransform
   isSelected: boolean
+  isLivePhoto?: boolean
   onSelect: () => void
   onChange: (next: PhotoTransform) => void
   onEnlarge: () => void
@@ -73,6 +77,7 @@ function FrameSlot({
   cssFilter,
   transform,
   isSelected,
+  isLivePhoto = false,
   onSelect,
   onChange,
   onEnlarge,
@@ -306,6 +311,13 @@ function FrameSlot({
             <span className="font-mono text-[9px] text-white">{transform.zoom.toFixed(1)}×</span>
           </div>
         )}
+
+        {/* Subtle Live Photo indicator */}
+        {isLivePhoto && (
+          <div className="absolute bottom-1.5 right-1.5 pointer-events-none">
+            <LivePhotoBadge compact />
+          </div>
+        )}
       </div>
 
       {/* Quick footer per frame */}
@@ -340,6 +352,7 @@ export default function PhotoFrameEditor({
   layout,
   poseCount,
   filter,
+  livePhotos,
   onChange,
   onResetAll,
   onEnlarge,
@@ -401,6 +414,7 @@ export default function PhotoFrameEditor({
             cssFilter={cssFilter}
             transform={transforms[i] ?? DEFAULT_PHOTO_TRANSFORM}
             isSelected={safeIdx === i}
+            isLivePhoto={Boolean(livePhotos?.[i]?.videoUrl)}
             onSelect={() => setSelectedIdx(i)}
             onChange={(next) => onChange(i, next)}
             onEnlarge={() => onEnlarge(i)}

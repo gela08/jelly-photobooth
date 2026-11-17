@@ -10,9 +10,23 @@ import ExportPanel from '@/components/ExportPanel'
 import PhotoFrameEditor from '@/components/PhotoFrameEditor'
 import StripDesignSelector from '@/components/StripDesignSelector'
 import StickerEditor from '@/components/StickerEditor'
+import SessionProtectionModal from '@/components/SessionProtectionModal'
+import LivePhotoViewer from '@/components/LivePhotoPlayer'
+import { downloadPhoto } from '@/lib/canvasExport'
+import {
+  clearActiveDraft,
+  deleteSavedSession,
+  hydrateStoredSession,
+  listSavedSessions,
+  loadActiveDraft,
+  PersistedSessionRecord,
+  saveActiveDraft,
+  saveSessionSnapshot,
+  serializeSessionForStorage,
+} from '@/lib/sessionStorage'
 import {
   FilterType, LayoutType, PoseCount, CountdownSeconds, PhotoSession, PhotoTransform,
-  PlacedSticker, StripBorderStyle, StripDecoration, StripThemeId, SessionVideoData,
+  PlacedSticker, StripBorderStyle, StripDecoration, StripThemeId, SessionVideoData, LivePhotoItem,
   DEFAULT_PHOTO_TRANSFORM, POSE_COUNT_OPTIONS, COUNTDOWN_OPTIONS, getDefaultLayout, FILTERS, ALL_LAYOUTS,
 } from '@/lib/types'
 
@@ -81,11 +95,15 @@ function CheckIcon() {
 // ── Photo Lightbox ─────────────────────────────────────────────────────────────
 function PhotoLightbox({
   photos,
+  livePhotos,
+  filter = 'none',
   startIndex,
   cssFilter = 'none',
   onClose,
 }: {
   photos: string[]
+  livePhotos?: LivePhotoItem[]
+  filter?: FilterType
   startIndex: number
   cssFilter?: string
   onClose: () => void
@@ -94,6 +112,7 @@ function PhotoLightbox({
 
   const prev = () => setIdx(i => Math.max(0, i - 1))
   const next = () => setIdx(i => Math.min(photos.length - 1, i + 1))
+  const activeLive = livePhotos?.[idx]
 
   return (
     <div
@@ -102,26 +121,46 @@ function PhotoLightbox({
       onClick={onClose}
     >
       <div className="relative animate-scale-in" onClick={(e) => e.stopPropagation()}>
-        <img
-          src={photos[idx]}
-          alt={`Photo ${idx + 1}`}
-          style={{
-            maxWidth: 'min(92vw, 640px)',
-            maxHeight: 'min(82vh, 700px)',
-            objectFit: 'contain',
-            border: '6px solid white',
-            boxShadow: '0 32px 100px rgba(0,0,0,0.8)',
-            display: 'block',
-            filter: cssFilter,
-          }}
-        />
+        {activeLive?.videoUrl ? (
+          <div
+            style={{
+              width: 'min(92vw, 640px)',
+              aspectRatio: '4/3',
+              maxHeight: 'min(82vh, 700px)',
+              border: '6px solid white',
+              boxShadow: '0 32px 100px rgba(0,0,0,0.8)',
+              background: '#000',
+            }}
+          >
+            <LivePhotoViewer
+              item={activeLive}
+              filter={filter}
+              poseNumber={idx + 1}
+              className="w-full h-full"
+            />
+          </div>
+        ) : (
+          <img
+            src={photos[idx]}
+            alt={`Photo ${idx + 1}`}
+            style={{
+              maxWidth: 'min(92vw, 640px)',
+              maxHeight: 'min(82vh, 700px)',
+              objectFit: 'contain',
+              border: '6px solid white',
+              boxShadow: '0 32px 100px rgba(0,0,0,0.8)',
+              display: 'block',
+              filter: cssFilter,
+            }}
+          />
+        )}
 
         {/* Counter */}
         <div
           className="absolute -bottom-8 left-0 right-0 text-center font-display text-xs tracking-widest uppercase"
           style={{ color: 'rgba(245,240,232,0.55)' }}
         >
-          {idx + 1} / {photos.length}
+          {idx + 1} / {photos.length}{activeLive?.videoUrl ? ' · Live Photo' : ''}
         </div>
 
         {/* Close */}
@@ -219,6 +258,7 @@ function StepProgress({ current }: { current: Step }) {
 // ── Customize Step ─────────────────────────────────────────────────────────────
 function CustomizeStep({
   photos,
+  livePhotos,
   photoTransforms,
   filter,
   layout,
@@ -245,6 +285,7 @@ function CustomizeStep({
   onNext,
 }: {
   photos: string[]
+  livePhotos?: LivePhotoItem[]
   photoTransforms: PhotoTransform[]
   filter: FilterType
   layout: LayoutType
@@ -286,6 +327,7 @@ function CustomizeStep({
     customStripColor,
     borderStyle,
     stripDecoration,
+    livePhotos,
   }
 
   return (
@@ -293,6 +335,8 @@ function CustomizeStep({
       {lightboxIdx !== null && (
         <PhotoLightbox
           photos={photos}
+          livePhotos={livePhotos}
+          filter={filter}
           startIndex={lightboxIdx}
           cssFilter={cssFilter}
           onClose={() => setLightboxIdx(null)}
@@ -316,6 +360,7 @@ function CustomizeStep({
           layout={layout}
           poseCount={poseCount}
           filter={filter}
+          livePhotos={livePhotos}
           onChange={onTransformChange}
           onResetAll={onResetTransforms}
           onEnlarge={(idx) => setLightboxIdx(idx)}
@@ -520,11 +565,19 @@ function SetupStep({
   countdown,
   filter,
   liveCaptureEnabled,
+  livePhotoEnabled,
   includeAudio,
+  recoverableDraft,
+  savedSessions,
+  onRestoreDraft,
+  onDiscardDraft,
+  onRestoreSavedSession,
+  onDeleteSavedSession,
   onPoseChange,
   onLayoutChange,
   onCountdownChange,
   onLiveCaptureToggle,
+  onLivePhotoToggle,
   onAudioToggle,
   onStart,
 }: {
@@ -533,16 +586,60 @@ function SetupStep({
   countdown: CountdownSeconds
   filter: FilterType
   liveCaptureEnabled: boolean
+  livePhotoEnabled: boolean
   includeAudio: boolean
+  recoverableDraft: PersistedSessionRecord | null
+  savedSessions: PersistedSessionRecord[]
+  onRestoreDraft: () => void
+  onDiscardDraft: () => void
+  onRestoreSavedSession: (record: PersistedSessionRecord) => void
+  onDeleteSavedSession: (id: string) => void
   onPoseChange: (p: PoseCount) => void
   onLayoutChange: (l: LayoutType) => void
   onCountdownChange: (c: CountdownSeconds) => void
   onLiveCaptureToggle: () => void
+  onLivePhotoToggle: () => void
   onAudioToggle: () => void
   onStart: () => void
 }) {
+  const [showSavedList, setShowSavedList] = useState(false)
+
   return (
     <div className="space-y-6 animate-fade-in-up select-none">
+      {recoverableDraft && recoverableDraft.photos.length > 0 && (
+        <div
+          className="section-card flex flex-wrap items-center justify-between gap-3"
+          style={{ background: 'var(--parchment)', border: '1px solid var(--vintage-brown)' }}
+        >
+          <div className="min-w-0">
+            <p className="font-display text-xs tracking-widest uppercase font-bold" style={{ color: 'var(--vintage-brown)' }}>
+              Recoverable Session Found
+            </p>
+            <p className="font-body text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              {recoverableDraft.photos.length} photos · saved {new Date(recoverableDraft.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onDiscardDraft}
+              className="px-3 py-2 rounded-sm font-display text-[10px] tracking-widest uppercase transition-all active:scale-95"
+              style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface)' }}
+            >
+              Discard
+            </button>
+            <button
+              type="button"
+              onClick={onRestoreDraft}
+              className="px-3.5 py-2 rounded-sm font-display text-[10px] tracking-widest uppercase transition-all active:scale-95"
+              style={{ background: 'var(--vintage-brown)', color: 'var(--cream)' }}
+            >
+              Restore Session
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="text-center">
         <p className="font-display text-xs tracking-[0.3em] uppercase mb-2" style={{ color: 'var(--sepia)' }}>
           Step 1 of 4
@@ -639,7 +736,29 @@ function SetupStep({
           </button>
         </div>
 
-        {liveCaptureEnabled && (
+        <div
+          className="flex items-center justify-between gap-4 pt-3"
+          style={{ borderTop: '1px solid var(--border)' }}
+        >
+          <div>
+            <p className="font-display text-[11px] tracking-wide uppercase" style={{ color: 'var(--text-secondary)' }}>
+              iOS Live Photo Mode (3s per pose)
+            </p>
+            <p className="font-body text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              Captures ~1.5s before &amp; ~1.5s after each shutter with synced audio
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onLivePhotoToggle}
+            className={`toggle-track flex-shrink-0 ${livePhotoEnabled ? 'on' : ''}`}
+            aria-label="Toggle iOS Live Photo mode"
+          >
+            <div className="toggle-thumb" />
+          </button>
+        </div>
+
+        {(liveCaptureEnabled || livePhotoEnabled) && (
           <div
             className="flex items-center justify-between gap-4 pt-3"
             style={{ borderTop: '1px solid var(--border)' }}
@@ -649,7 +768,7 @@ function SetupStep({
                 Include Microphone Audio
               </p>
               <p className="font-body text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                Only for the downloadable session video clip (GIF is always silent)
+                Used for Live Photo clips &amp; session video (GIF is always silent)
               </p>
             </div>
             <button
@@ -683,8 +802,65 @@ function SetupStep({
       </button>
 
       <p className="text-center text-xs font-body" style={{ color: 'var(--text-muted)', opacity: 0.65 }}>
-        {poseCount} photos · {countdown}s countdown each · {liveCaptureEnabled ? 'Live GIF & video enabled' : 'photos only'}
+        {poseCount} photos · {countdown}s countdown each · {livePhotoEnabled ? 'iOS Live Photo enabled' : liveCaptureEnabled ? 'Live GIF & video enabled' : 'photos only'}
       </p>
+
+      {savedSessions.length > 0 && (
+        <div className="section-card space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="font-display text-[11px] tracking-widest uppercase" style={{ color: 'var(--text-secondary)' }}>
+              Saved Sessions ({savedSessions.length})
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowSavedList((v) => !v)}
+              className="font-display text-[10px] tracking-widest uppercase underline"
+              style={{ color: 'var(--sepia)' }}
+            >
+              {showSavedList ? 'Hide' : 'View'}
+            </button>
+          </div>
+
+          {showSavedList && (
+            <div className="space-y-2 pt-1">
+              {savedSessions.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-sm"
+                  style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+                >
+                  <div className="min-w-0">
+                    <p className="font-display text-xs font-bold truncate" style={{ color: 'var(--vintage-brown)' }}>
+                      {item.caption ? `"${item.caption}"` : `${item.photos.length}-Pose Strip`}
+                    </p>
+                    <p className="font-body text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      {new Date(item.savedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => onRestoreSavedSession(item)}
+                      className="px-2.5 py-1 rounded-sm font-display text-[10px] tracking-widest uppercase"
+                      style={{ background: 'var(--vintage-brown)', color: 'var(--cream)' }}
+                    >
+                      Open
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteSavedSession(item.id)}
+                      className="px-2 py-1 rounded-sm font-display text-[10px] tracking-widest uppercase"
+                      style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -706,29 +882,161 @@ export default function PhotoboothPage() {
   const [borderStyle, setBorderStyle] = useState<StripBorderStyle>('classic')
   const [stripDecoration, setStripDecoration] = useState<StripDecoration>('none')
   const [liveCaptureEnabled, setLiveCaptureEnabled] = useState(true)
+  const [livePhotoEnabled, setLivePhotoEnabled] = useState(false)
   const [includeAudio, setIncludeAudio] = useState(false)
   const [sessionVideo, setSessionVideo] = useState<SessionVideoData | undefined>(undefined)
   const [showPrivacy, setShowPrivacy] = useState(false)
 
-  const sessionVideoUrlRef = useRef<string | undefined>(undefined)
-  sessionVideoUrlRef.current = sessionVideo?.videoUrl
+  // Session protection & recovery state
+  const [isDirty, setIsDirty] = useState(false)
+  const [hasUnsavedCameraShots, setHasUnsavedCameraShots] = useState(false)
+  const [protectionModal, setProtectionModal] = useState<'refresh' | 'new_session' | null>(null)
+  const [isProtectionSaving, setIsProtectionSaving] = useState(false)
+  const [protectionSaveError, setProtectionSaveError] = useState<string | null>(null)
+  const [recoverableDraft, setRecoverableDraft] = useState<PersistedSessionRecord | null>(null)
+  const [savedSessions, setSavedSessions] = useState<PersistedSessionRecord[]>([])
+
+  const sessionVideoRef = useRef<SessionVideoData | undefined>(undefined)
+  sessionVideoRef.current = sessionVideo
+  const skipBeforeUnloadRef = useRef(false)
+
+  const revokeMediaUrls = useCallback((videoData?: SessionVideoData) => {
+    if (!videoData) return
+    if (videoData.videoUrl) URL.revokeObjectURL(videoData.videoUrl)
+    videoData.livePhotos?.forEach((lp) => {
+      if (lp.videoUrl) URL.revokeObjectURL(lp.videoUrl)
+    })
+  }, [])
 
   useEffect(() => {
     return () => {
-      if (sessionVideoUrlRef.current) {
-        URL.revokeObjectURL(sessionVideoUrlRef.current)
-      }
+      revokeMediaUrls(sessionVideoRef.current)
+    }
+  }, [revokeMediaUrls])
+
+  // Load recoverable draft and saved session snapshots on mount
+  const refreshStoredSessions = useCallback(async () => {
+    try {
+      const [draft, saved] = await Promise.all([loadActiveDraft(), listSavedSessions()])
+      setRecoverableDraft(draft)
+      setSavedSessions(saved)
+    } catch {
+      // IndexedDB unavailable (e.g. private browsing restrictions) — degrade silently
     }
   }, [])
 
+  useEffect(() => {
+    refreshStoredSessions()
+  }, [refreshStoredSessions])
+
   const insideBooth = step === 'camera' || step === 'customize' || step === 'export'
+  const hasUnsavedWork =
+    (photos.length > 0 && isDirty) || (step === 'camera' && hasUnsavedCameraShots)
 
   const clearRecordedMedia = useCallback(() => {
     setSessionVideo((prev) => {
-      if (prev?.videoUrl) URL.revokeObjectURL(prev.videoUrl)
+      revokeMediaUrls(prev)
       return undefined
     })
-  }, [])
+  }, [revokeMediaUrls])
+
+  const resetToNewSession = useCallback(() => {
+    clearRecordedMedia()
+    setPhotos([])
+    setPhotoTransforms([])
+    setStickers([])
+    setCaption('')
+    setIsDirty(false)
+    setHasUnsavedCameraShots(false)
+    setStep('setup')
+    setRecoverableDraft(null)
+    clearActiveDraft()
+      .catch(() => {})
+      .finally(() => {
+        refreshStoredSessions()
+      })
+  }, [clearRecordedMedia, refreshStoredSessions])
+
+  // Native beforeunload protection whenever unsaved work exists
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!hasUnsavedWork || skipBeforeUnloadRef.current) return
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [hasUnsavedWork])
+
+  // In-app dialog when user presses keyboard reload shortcuts (F5, Ctrl/Cmd+R) with unsaved work
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!hasUnsavedWork) return
+      const isRefreshKey =
+        e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r')
+      if (isRefreshKey) {
+        e.preventDefault()
+        setProtectionSaveError(null)
+        setProtectionModal('refresh')
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [hasUnsavedWork])
+
+  // Autosave active working session draft so accidental browser reloads can be recovered
+  useEffect(() => {
+    if (!isDirty || photos.length === 0 || (step !== 'customize' && step !== 'export')) return
+    const timer = window.setTimeout(async () => {
+      try {
+        const serialized = await serializeSessionForStorage({
+          id: 'active',
+          step,
+          poseCount,
+          countdown,
+          filter,
+          layout,
+          caption,
+          showDate,
+          photos,
+          photoTransforms,
+          stickers,
+          stripTheme,
+          customStripColor,
+          borderStyle,
+          stripDecoration,
+          liveCaptureEnabled,
+          livePhotoEnabled,
+          includeAudio,
+          sessionVideo,
+        })
+        await saveActiveDraft(serialized)
+      } catch {
+        // Ignore quota/storage errors silently during background autosave
+      }
+    }, 650)
+    return () => window.clearTimeout(timer)
+  }, [
+    isDirty,
+    step,
+    poseCount,
+    countdown,
+    filter,
+    layout,
+    caption,
+    showDate,
+    photos,
+    photoTransforms,
+    stickers,
+    stripTheme,
+    customStripColor,
+    borderStyle,
+    stripDecoration,
+    liveCaptureEnabled,
+    livePhotoEnabled,
+    includeAudio,
+    sessionVideo,
+  ])
 
   const handlePoseChange = (p: PoseCount) => {
     setPoseCount(p)
@@ -745,13 +1053,25 @@ export default function PhotoboothPage() {
     setPhotoTransforms(captured.map(() => ({ ...DEFAULT_PHOTO_TRANSFORM })))
     setStickers([])
     setSessionVideo((prev) => {
-      if (prev?.videoUrl && prev.videoUrl !== videoData?.videoUrl) {
-        URL.revokeObjectURL(prev.videoUrl)
+      if (prev && prev !== videoData) {
+        if (prev.videoUrl && prev.videoUrl !== videoData?.videoUrl) {
+          URL.revokeObjectURL(prev.videoUrl)
+        }
+        prev.livePhotos?.forEach((lp) => {
+          const stillUsed = videoData?.livePhotos?.some((nextLp) => nextLp.videoUrl === lp.videoUrl)
+          if (lp.videoUrl && !stillUsed) URL.revokeObjectURL(lp.videoUrl)
+        })
       }
       return videoData
     })
+    setHasUnsavedCameraShots(false)
+    setIsDirty(true)
     setStep('customize')
   }, [])
+
+  const markDirtyIfSession = useCallback(() => {
+    if (photos.length > 0) setIsDirty(true)
+  }, [photos.length])
 
   const handleTransformChange = useCallback((index: number, next: PhotoTransform) => {
     setPhotoTransforms((prev) => {
@@ -759,10 +1079,12 @@ export default function PhotoboothPage() {
       updated[index] = next
       return updated
     })
+    setIsDirty(true)
   }, [])
 
   const handleResetTransforms = useCallback(() => {
     setPhotoTransforms(photos.map(() => ({ ...DEFAULT_PHOTO_TRANSFORM })))
+    setIsDirty(true)
   }, [photos])
 
   const session: PhotoSession = {
@@ -779,6 +1101,170 @@ export default function PhotoboothPage() {
     borderStyle,
     stripDecoration,
     liveFramesPerPose: sessionVideo?.liveFramesPerPose,
+    livePhotos: sessionVideo?.livePhotos,
+  }
+
+  const performVerifiedSave = async (): Promise<boolean> => {
+    if (photos.length === 0) {
+      setProtectionSaveError('Finalize your photos before saving (tap "Looks Great!" in the camera view).')
+      return false
+    }
+    try {
+      await downloadPhoto(session, 'print')
+      const serialized = await serializeSessionForStorage({
+        id: `snap_${Date.now()}`,
+        step: step === 'export' ? 'export' : 'customize',
+        poseCount,
+        countdown,
+        filter,
+        layout,
+        caption,
+        showDate,
+        photos,
+        photoTransforms,
+        stickers,
+        stripTheme,
+        customStripColor,
+        borderStyle,
+        stripDecoration,
+        liveCaptureEnabled,
+        livePhotoEnabled,
+        includeAudio,
+        sessionVideo,
+      })
+      await saveSessionSnapshot(serialized)
+      await clearActiveDraft().catch(() => {})
+      setIsDirty(false)
+      await refreshStoredSessions()
+      return true
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Save failed. Your current session has been preserved.'
+      setProtectionSaveError(msg)
+      return false
+    }
+  }
+
+  const handleSessionSaved = useCallback(async () => {
+    setIsDirty(false)
+    try {
+      const serialized = await serializeSessionForStorage({
+        id: `snap_${Date.now()}`,
+        step: 'export',
+        poseCount,
+        countdown,
+        filter,
+        layout,
+        caption,
+        showDate,
+        photos,
+        photoTransforms,
+        stickers,
+        stripTheme,
+        customStripColor,
+        borderStyle,
+        stripDecoration,
+        liveCaptureEnabled,
+        livePhotoEnabled,
+        includeAudio,
+        sessionVideo,
+      })
+      await saveSessionSnapshot(serialized)
+      await clearActiveDraft().catch(() => {})
+      await refreshStoredSessions()
+    } catch {
+      // Download already succeeded; snapshot storage failure is non-fatal
+    }
+  }, [
+    poseCount,
+    countdown,
+    filter,
+    layout,
+    caption,
+    showDate,
+    photos,
+    photoTransforms,
+    stickers,
+    stripTheme,
+    customStripColor,
+    borderStyle,
+    stripDecoration,
+    liveCaptureEnabled,
+    livePhotoEnabled,
+    includeAudio,
+    sessionVideo,
+    refreshStoredSessions,
+  ])
+
+  const restoreFromRecord = useCallback(
+    (record: PersistedSessionRecord, markAsDirty: boolean) => {
+      clearRecordedMedia()
+      const hydrated = hydrateStoredSession(record)
+      setPoseCount(hydrated.poseCount)
+      setCountdown(hydrated.countdown)
+      setFilter(hydrated.filter)
+      setLayout(hydrated.layout)
+      setCaption(hydrated.caption)
+      setShowDate(hydrated.showDate)
+      setPhotos(hydrated.photos)
+      setPhotoTransforms(
+        hydrated.photoTransforms.length === hydrated.photos.length
+          ? hydrated.photoTransforms
+          : hydrated.photos.map(() => ({ ...DEFAULT_PHOTO_TRANSFORM }))
+      )
+      setStickers(hydrated.stickers)
+      setStripTheme(hydrated.stripTheme)
+      setCustomStripColor(hydrated.customStripColor)
+      setBorderStyle(hydrated.borderStyle)
+      setStripDecoration(hydrated.stripDecoration)
+      setLiveCaptureEnabled(hydrated.liveCaptureEnabled)
+      setLivePhotoEnabled(hydrated.livePhotoEnabled)
+      setIncludeAudio(hydrated.includeAudio)
+      setSessionVideo(hydrated.sessionVideo)
+      setIsDirty(markAsDirty)
+      setStep(hydrated.step)
+    },
+    [clearRecordedMedia]
+  )
+
+  const handleRequestNewSession = useCallback(() => {
+    if (hasUnsavedWork) {
+      setProtectionSaveError(null)
+      setProtectionModal('new_session')
+    } else {
+      resetToNewSession()
+    }
+  }, [hasUnsavedWork, resetToNewSession])
+
+  const handleProtectionSaveAndProceed = async () => {
+    if (isProtectionSaving) return
+    setProtectionSaveError(null)
+    setIsProtectionSaving(true)
+    const ok = await performVerifiedSave()
+    setIsProtectionSaving(false)
+    if (!ok) return
+
+    const mode = protectionModal
+    setProtectionModal(null)
+    if (mode === 'new_session') {
+      resetToNewSession()
+    } else if (mode === 'refresh') {
+      skipBeforeUnloadRef.current = true
+      await new Promise((r) => setTimeout(r, 450))
+      window.location.reload()
+    }
+  }
+
+  const handleProtectionDiscardAndProceed = async () => {
+    const mode = protectionModal
+    setProtectionModal(null)
+    setProtectionSaveError(null)
+    if (mode === 'new_session') {
+      resetToNewSession()
+    } else if (mode === 'refresh') {
+      await clearActiveDraft().catch(() => {})
+      skipBeforeUnloadRef.current = true
+      window.location.reload()
+    }
   }
 
   return (
@@ -786,8 +1272,7 @@ export default function PhotoboothPage() {
       <Nav
         insideBooth={insideBooth}
         onLeaveConfirm={() => {
-          clearRecordedMedia()
-          setStep('setup')
+          resetToNewSession()
         }}
       />
 
@@ -806,11 +1291,26 @@ export default function PhotoboothPage() {
               layout={layout}
               countdown={countdown}
               liveCaptureEnabled={liveCaptureEnabled}
+              livePhotoEnabled={livePhotoEnabled}
               includeAudio={includeAudio}
+              recoverableDraft={recoverableDraft}
+              savedSessions={savedSessions}
+              onRestoreDraft={() => {
+                if (recoverableDraft) restoreFromRecord(recoverableDraft, true)
+              }}
+              onDiscardDraft={() => {
+                clearActiveDraft().catch(() => {})
+                setRecoverableDraft(null)
+              }}
+              onRestoreSavedSession={(record) => restoreFromRecord(record, false)}
+              onDeleteSavedSession={(id) => {
+                deleteSavedSession(id).then(() => refreshStoredSessions()).catch(() => {})
+              }}
               onPoseChange={handlePoseChange}
               onLayoutChange={setLayout}
               onCountdownChange={setCountdown}
               onLiveCaptureToggle={() => setLiveCaptureEnabled((v) => !v)}
+              onLivePhotoToggle={() => setLivePhotoEnabled((v) => !v)}
               onAudioToggle={() => setIncludeAudio((a) => !a)}
               onStart={() => setShowPrivacy(true)}
             />
@@ -823,13 +1323,17 @@ export default function PhotoboothPage() {
                 poseCount={poseCount}
                 countdownSeconds={countdown}
                 liveCaptureEnabled={liveCaptureEnabled}
+                livePhotoEnabled={livePhotoEnabled}
                 includeAudio={includeAudio}
                 onLiveCaptureToggle={() => setLiveCaptureEnabled((v) => !v)}
+                onLivePhotoToggle={() => setLivePhotoEnabled((v) => !v)}
                 onAudioToggle={() => setIncludeAudio((a) => !a)}
                 onFilterChange={setFilter}
                 onPhotosCapture={handlePhotosCapture}
+                onHasUnsavedShotsChange={setHasUnsavedCameraShots}
                 onCancel={() => {
                   clearRecordedMedia()
+                  setHasUnsavedCameraShots(false)
                   setStep('setup')
                 }}
               />
@@ -839,6 +1343,7 @@ export default function PhotoboothPage() {
           {step === 'customize' && photos.length > 0 && (
             <CustomizeStep
               photos={photos}
+              livePhotos={sessionVideo?.livePhotos}
               photoTransforms={photoTransforms}
               filter={filter}
               layout={layout}
@@ -852,17 +1357,18 @@ export default function PhotoboothPage() {
               stripDecoration={stripDecoration}
               onTransformChange={handleTransformChange}
               onResetTransforms={handleResetTransforms}
-              onFilterChange={setFilter}
-              onLayoutChange={setLayout}
-              onCaptionChange={setCaption}
-              onDateToggle={() => setShowDate((d) => !d)}
-              onStickersChange={setStickers}
-              onThemeChange={setStripTheme}
-              onCustomColorChange={setCustomStripColor}
-              onBorderChange={setBorderStyle}
-              onDecorationChange={setStripDecoration}
+              onFilterChange={(f) => { setFilter(f); markDirtyIfSession() }}
+              onLayoutChange={(l) => { setLayout(l); markDirtyIfSession() }}
+              onCaptionChange={(c) => { setCaption(c); markDirtyIfSession() }}
+              onDateToggle={() => { setShowDate((d) => !d); markDirtyIfSession() }}
+              onStickersChange={(next) => { setStickers(next); markDirtyIfSession() }}
+              onThemeChange={(id) => { setStripTheme(id); markDirtyIfSession() }}
+              onCustomColorChange={(hex) => { setCustomStripColor(hex); markDirtyIfSession() }}
+              onBorderChange={(style) => { setBorderStyle(style); markDirtyIfSession() }}
+              onDecorationChange={(dec) => { setStripDecoration(dec); markDirtyIfSession() }}
               onBack={() => {
                 clearRecordedMedia()
+                setIsDirty(false)
                 setStep('camera')
               }}
               onNext={() => setStep('export')}
@@ -892,13 +1398,9 @@ export default function PhotoboothPage() {
               <ExportPanel
                 session={session}
                 sessionVideo={sessionVideo}
-                onRetake={() => {
-                  clearRecordedMedia()
-                  setPhotos([])
-                  setPhotoTransforms([])
-                  setStickers([])
-                  setStep('setup')
-                }}
+                onRetake={resetToNewSession}
+                onRequestNewSession={handleRequestNewSession}
+                onSessionSaved={handleSessionSaved}
               />
             </div>
           )}
@@ -933,6 +1435,23 @@ export default function PhotoboothPage() {
         <PrivacyModal
           onAccept={handlePrivacyAccept}
           onDecline={() => setShowPrivacy(false)}
+        />
+      )}
+
+      {/* Session protection modal (refresh & new session) */}
+      {protectionModal && (
+        <SessionProtectionModal
+          mode={protectionModal}
+          isSaving={isProtectionSaving}
+          saveError={protectionSaveError}
+          onSaveAndProceed={handleProtectionSaveAndProceed}
+          onDiscardAndProceed={handleProtectionDiscardAndProceed}
+          onCancel={() => {
+            if (!isProtectionSaving) {
+              setProtectionModal(null)
+              setProtectionSaveError(null)
+            }
+          }}
         />
       )}
     </div>

@@ -133,9 +133,35 @@ export type StripDecoration = 'none' | 'stars' | 'hearts' | 'corners' | 'sparkle
 
 // ── Live Motion & Video Session ───────────────────────────────────────────
 
+export interface LivePhotoItem {
+  id: string
+  /** High-resolution still image captured at the exact shutter moment */
+  stillUrl: string
+  /** ~3s motion video Blob (approx. 1.5s before shutter + 1.5s after shutter) */
+  videoBlob?: Blob
+  /** Object URL for the ~3s motion video clip */
+  videoUrl?: string
+  /** Negotiated video MIME type (e.g. video/mp4 or video/webm) */
+  videoMimeType?: string
+  /** File extension ('mp4' | 'webm') */
+  videoExt?: 'mp4' | 'webm'
+  /** Total duration of the motion clip in seconds */
+  durationSec: number
+  /** Exact offset in seconds of the shutter moment within the video clip */
+  keyPhotoOffsetSec: number
+  /** True if synchronized microphone audio was captured */
+  hasAudio: boolean
+  /** Sampled motion frames covering before & after shutter for Live Strip GIF */
+  burstFrames?: string[]
+  /** Non-fatal capture warning (e.g. mic denied or video unsupported) */
+  warning?: string
+}
+
 export interface SessionVideoData {
   /** Per-pose captured burst frames (mirrored JPEG data URLs) leading into each shot */
   liveFramesPerPose: string[][]
+  /** Per-pose iOS-style Live Photos (key still + ~3s pre/post motion clip) */
+  livePhotos?: LivePhotoItem[]
   /** Recorded full-session MediaRecorder clip Blob URL (if supported) */
   videoUrl?: string
   /** Negotiated video MIME type (e.g. video/mp4 or video/webm) */
@@ -164,6 +190,7 @@ export interface PhotoSession {
   borderStyle?: StripBorderStyle
   stripDecoration?: StripDecoration
   liveFramesPerPose?: string[][]
+  livePhotos?: LivePhotoItem[]
 }
 
 // ── Setup options ─────────────────────────────────────────────────────────

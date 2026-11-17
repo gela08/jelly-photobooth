@@ -1,19 +1,26 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { PhotoSession, SessionVideoData } from '@/lib/types'
+import { LivePhotoItem, PhotoSession, SessionVideoData } from '@/lib/types'
 import { generatePhotoboothCanvas, downloadPhoto } from '@/lib/canvasExport'
 import {
   downloadUrl,
   formatDuration,
   generateLiveStripGif,
 } from '@/lib/liveExport'
+import {
+  exportFilteredLiveStill,
+  exportPairedLivePhoto,
+} from '@/lib/livePhotoCapture'
+import LivePhotoViewer, { LivePhotoBadge } from './LivePhotoPlayer'
 import BoothPrinterAnimation from './BoothPrinterAnimation'
 
 interface ExportPanelProps {
   session: PhotoSession
   sessionVideo?: SessionVideoData
   onRetake: () => void
+  onRequestNewSession?: () => void
+  onSessionSaved?: () => void
 }
 
 // --- Icons ---
@@ -67,7 +74,13 @@ const DownloadSmIcon = () => (
   </svg>
 )
 
-export default function ExportPanel({ session, sessionVideo, onRetake }: ExportPanelProps) {
+export default function ExportPanel({
+  session,
+  sessionVideo,
+  onRetake,
+  onRequestNewSession,
+  onSessionSaved,
+}: ExportPanelProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(true)
   const [isDownloading, setIsDownloading] = useState(false)
@@ -78,10 +91,15 @@ export default function ExportPanel({ session, sessionVideo, onRetake }: ExportP
   const [gifProgress, setGifProgress] = useState(0)
   const [isEncodingGif, setIsEncodingGif] = useState(false)
   const [gifError, setGifError] = useState<string | null>(null)
+  const [savingLivePoseIdx, setSavingLivePoseIdx] = useState<number | null>(null)
 
   const genIdRef = useRef(0)
   const gifJobIdRef = useRef(0)
   const liveGifUrlRef = useRef<string | null>(null)
+
+  const livePhotos: LivePhotoItem[] =
+    sessionVideo?.livePhotos ?? session.livePhotos ?? []
+  const hasLivePhotos = livePhotos.length > 0
 
   const hasLiveFrames = Boolean(
     session.liveFramesPerPose?.some((frames) => frames && frames.length > 0)
@@ -159,6 +177,7 @@ export default function ExportPanel({ session, sessionVideo, onRetake }: ExportP
     setIsDownloading(true)
     try {
       await downloadPhoto(session, format)
+      onSessionSaved?.()
     } catch (err) {
       console.error('Download failed:', err)
     } finally {
@@ -171,6 +190,7 @@ export default function ExportPanel({ session, sessionVideo, onRetake }: ExportP
     const url = liveGifUrl || (await buildLiveGif())
     if (url) {
       downloadUrl(url, `jellybooth_${dateStr}_live.gif`)
+      onSessionSaved?.()
     }
   }
 
@@ -181,6 +201,46 @@ export default function ExportPanel({ session, sessionVideo, onRetake }: ExportP
       sessionVideo.videoUrl,
       `jellybooth_${dateStr}_session.${sessionVideo.videoExt || 'webm'}`
     )
+    onSessionSaved?.()
+  }
+
+  const handleDownloadLiveStill = async (lp: LivePhotoItem, idx: number) => {
+    setSavingLivePoseIdx(idx)
+    try {
+      const dateStr = new Date().toISOString().split('T')[0]
+      const ok = await exportFilteredLiveStill(
+        lp.stillUrl,
+        session.filter,
+        `jellybooth_${dateStr}_live_pose${idx + 1}_still.png`
+      )
+      if (ok) onSessionSaved?.()
+    } catch (err) {
+      console.error('Live Photo still save failed:', err)
+    } finally {
+      setSavingLivePoseIdx(null)
+    }
+  }
+
+  const handleDownloadLiveClip = (lp: LivePhotoItem, idx: number) => {
+    if (!lp.videoUrl) return
+    const dateStr = new Date().toISOString().split('T')[0]
+    downloadUrl(
+      lp.videoUrl,
+      `jellybooth_${dateStr}_live_pose${idx + 1}_motion.${lp.videoExt || 'webm'}`
+    )
+    onSessionSaved?.()
+  }
+
+  const handleDownloadLivePair = async (lp: LivePhotoItem, idx: number) => {
+    setSavingLivePoseIdx(idx)
+    try {
+      const res = await exportPairedLivePhoto(lp, idx, session.filter)
+      if (res.stillSaved) onSessionSaved?.()
+    } catch (err) {
+      console.error('Live Photo paired save failed:', err)
+    } finally {
+      setSavingLivePoseIdx(null)
+    }
   }
 
   return (
@@ -232,7 +292,7 @@ export default function ExportPanel({ session, sessionVideo, onRetake }: ExportP
         </div>
 
         {/* Live Photo Strip (GIF) & Session Video Card */}
-        {(hasLiveFrames || sessionVideo?.videoUrl || sessionVideo?.warning) && (
+        {(hasLiveFrames || hasLivePhotos || sessionVideo?.videoUrl || sessionVideo?.warning) && (
           <div className="section-card space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
@@ -362,11 +422,111 @@ export default function ExportPanel({ session, sessionVideo, onRetake }: ExportP
                 </div>
               )}
             </div>
+
+            {/* Individual iOS-Style Live Photos (Still + ~3s Motion Clip) */}
+            {hasLivePhotos && (
+              <div
+                className="pt-4 space-y-3"
+                style={{ borderTop: '1px solid var(--border)' }}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <LivePhotoBadge compact />
+                    <span className="font-display text-[10px] tracking-widest uppercase" style={{ color: 'var(--vintage-brown)' }}>
+                      Live Photos ({livePhotos.length})
+                    </span>
+                  </div>
+                  <span className="font-body text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    Tap Play for ~3s motion · saves paired still + video
+                  </span>
+                </div>
+
+                <div
+                  className={`grid gap-3 ${
+                    livePhotos.length <= 2
+                      ? 'grid-cols-1 sm:grid-cols-2'
+                      : livePhotos.length === 3
+                        ? 'grid-cols-1 sm:grid-cols-3'
+                        : 'grid-cols-2 sm:grid-cols-4'
+                  }`}
+                >
+                  {livePhotos.map((lp, idx) => (
+                    <div
+                      key={lp.id}
+                      className="p-2 rounded-sm flex flex-col gap-2"
+                      style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+                    >
+                      <div className="w-full aspect-[4/3] rounded-sm overflow-hidden bg-black">
+                        <LivePhotoViewer
+                          item={lp}
+                          filter={session.filter}
+                          poseNumber={idx + 1}
+                          compact
+                          className="w-full h-full"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between text-[10px] font-mono px-0.5" style={{ color: 'var(--text-muted)' }}>
+                        <span>Pose #{idx + 1}</span>
+                        <span>
+                          {lp.durationSec > 0 ? `${lp.durationSec.toFixed(1)}s` : 'Still'}
+                          {lp.hasAudio ? ' · Audio' : ''}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button
+                            type="button"
+                            disabled={savingLivePoseIdx === idx}
+                            onClick={() => handleDownloadLiveStill(lp, idx)}
+                            className="px-2 py-1.5 rounded-sm font-display text-[9px] tracking-widest uppercase transition-all active:scale-95 disabled:opacity-50"
+                            style={{ border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--vintage-brown)' }}
+                          >
+                            Still .png
+                          </button>
+                          {lp.videoUrl ? (
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadLiveClip(lp, idx)}
+                              className="px-2 py-1.5 rounded-sm font-display text-[9px] tracking-widest uppercase transition-all active:scale-95"
+                              style={{ border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--vintage-brown)' }}
+                            >
+                              Clip .{lp.videoExt || 'webm'}
+                            </button>
+                          ) : (
+                            <span
+                              className="px-2 py-1.5 rounded-sm font-display text-[9px] tracking-widest uppercase text-center opacity-50"
+                              style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+                            >
+                              No Clip
+                            </span>
+                          )}
+                        </div>
+
+                        {lp.videoUrl && (
+                          <button
+                            type="button"
+                            disabled={savingLivePoseIdx === idx}
+                            onClick={() => handleDownloadLivePair(lp, idx)}
+                            className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-sm font-display text-[9px] tracking-widest uppercase transition-all active:scale-95 disabled:opacity-50"
+                            style={{ background: 'var(--vintage-brown)', color: 'var(--cream)' }}
+                          >
+                            <DownloadSmIcon />
+                            <span>{savingLivePoseIdx === idx ? 'Saving…' : 'Save Pair (Still + Motion)'}</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         <button
-          onClick={onRetake}
+          onClick={onRequestNewSession ?? onRetake}
           className="w-full flex items-center justify-center gap-2 font-display text-[11px] tracking-widest uppercase px-6 py-4 transition-all active:scale-95 rounded-sm"
           style={{
             border: '1px solid var(--border)',
