@@ -12,7 +12,9 @@ import {
   exportFilteredLiveStill,
   exportPairedLivePhoto,
 } from '@/lib/livePhotoCapture'
+import { exportLivePhotoStripVideo } from '@/lib/liveStripVideo'
 import LivePhotoViewer, { LivePhotoBadge } from './LivePhotoPlayer'
+import LivePhotoStripPlayer from './LivePhotoStripPlayer'
 import BoothPrinterAnimation from './BoothPrinterAnimation'
 
 interface ExportPanelProps {
@@ -93,13 +95,23 @@ export default function ExportPanel({
   const [gifError, setGifError] = useState<string | null>(null)
   const [savingLivePoseIdx, setSavingLivePoseIdx] = useState<number | null>(null)
 
+  // Live Photo Strip HD video state
+  const [liveStripVideoUrl, setLiveStripVideoUrl] = useState<string | null>(null)
+  const [liveStripVideoExt, setLiveStripVideoExt] = useState<'mp4' | 'webm'>('mp4')
+  const [stripVideoProgress, setStripVideoProgress] = useState(0)
+  const [isExportingStripVideo, setIsExportingStripVideo] = useState(false)
+  const [stripVideoError, setStripVideoError] = useState<string | null>(null)
+
   const genIdRef = useRef(0)
   const gifJobIdRef = useRef(0)
+  const stripVideoJobIdRef = useRef(0)
   const liveGifUrlRef = useRef<string | null>(null)
+  const liveStripVideoUrlRef = useRef<string | null>(null)
 
   const livePhotos: LivePhotoItem[] =
     sessionVideo?.livePhotos ?? session.livePhotos ?? []
   const hasLivePhotos = livePhotos.length > 0
+  const hasPlayableLivePhotos = livePhotos.some((lp) => Boolean(lp.videoUrl))
 
   const hasLiveFrames = Boolean(
     session.liveFramesPerPose?.some((frames) => frames && frames.length > 0)
@@ -124,15 +136,31 @@ export default function ExportPanel({
     generatePreview()
   }, [generatePreview])
 
-  // Revoke generated GIF Object URL cleanly on unmount or re-encode
+  // Revoke generated Object URLs cleanly on unmount
   useEffect(() => {
     return () => {
       if (liveGifUrlRef.current) {
         URL.revokeObjectURL(liveGifUrlRef.current)
         liveGifUrlRef.current = null
       }
+      if (liveStripVideoUrlRef.current) {
+        URL.revokeObjectURL(liveStripVideoUrlRef.current)
+        liveStripVideoUrlRef.current = null
+      }
     }
   }, [])
+
+  // Invalidate cached HD Live Photo Strip video if customization/session changes
+  useEffect(() => {
+    stripVideoJobIdRef.current += 1
+    if (liveStripVideoUrlRef.current) {
+      URL.revokeObjectURL(liveStripVideoUrlRef.current)
+      liveStripVideoUrlRef.current = null
+    }
+    setLiveStripVideoUrl(null)
+    setStripVideoError(null)
+    setStripVideoProgress(0)
+  }, [session, sessionVideo?.livePhotos])
 
   const buildLiveGif = useCallback(async (): Promise<string | null> => {
     if (!hasLiveFrames) return null
@@ -240,6 +268,50 @@ export default function ExportPanel({
       console.error('Live Photo paired save failed:', err)
     } finally {
       setSavingLivePoseIdx(null)
+    }
+  }
+
+  const handleDownloadLivePhotoStripVideo = async () => {
+    if (isExportingStripVideo || !hasPlayableLivePhotos) return
+    const dateStr = new Date().toISOString().split('T')[0]
+
+    if (liveStripVideoUrlRef.current) {
+      downloadUrl(
+        liveStripVideoUrlRef.current,
+        `jellybooth_${dateStr}_live_strip.${liveStripVideoExt}`
+      )
+      onSessionSaved?.()
+      return
+    }
+
+    const jobId = ++stripVideoJobIdRef.current
+    setIsExportingStripVideo(true)
+    setStripVideoError(null)
+    setStripVideoProgress(5)
+
+    try {
+      const result = await exportLivePhotoStripVideo(session, livePhotos, (pct) => {
+        if (stripVideoJobIdRef.current === jobId) setStripVideoProgress(pct)
+      })
+      if (stripVideoJobIdRef.current === jobId) {
+        liveStripVideoUrlRef.current = result.url
+        setLiveStripVideoUrl(result.url)
+        setLiveStripVideoExt(result.ext)
+        downloadUrl(result.url, `jellybooth_${dateStr}_live_strip.${result.ext}`)
+        onSessionSaved?.()
+      } else {
+        URL.revokeObjectURL(result.url)
+      }
+    } catch (err) {
+      if (stripVideoJobIdRef.current === jobId) {
+        setStripVideoError(
+          err instanceof Error
+            ? err.message
+            : 'Could not export HD Live Photo strip on this browser.'
+        )
+      }
+    } finally {
+      if (stripVideoJobIdRef.current === jobId) setIsExportingStripVideo(false)
     }
   }
 
@@ -440,6 +512,58 @@ export default function ExportPanel({
                     Tap Play for ~3s motion · saves paired still + video
                   </span>
                 </div>
+
+                {/* Live Photo Strip Interactive Preview & HD Video Export */}
+                {hasPlayableLivePhotos && (
+                  <div
+                    className="p-3 rounded-sm flex flex-col gap-3"
+                    style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-display text-[10px] tracking-widest uppercase" style={{ color: 'var(--text-secondary)' }}>
+                        Live Photo Strip
+                      </span>
+                      <span className="font-body text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        Moving strip · HD
+                      </span>
+                    </div>
+
+                    <div
+                      className="flex justify-center items-center min-h-[180px] rounded-sm p-2"
+                      style={{ background: 'var(--surface-2)' }}
+                    >
+                      <LivePhotoStripPlayer
+                        session={session}
+                        livePhotos={livePhotos}
+                        stillStripUrl={previewUrl}
+                        className="w-full"
+                      />
+                    </div>
+
+                    {stripVideoError && (
+                      <p className="font-body text-xs text-center" style={{ color: 'var(--sepia)' }}>
+                        {stripVideoError}
+                      </p>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleDownloadLivePhotoStripVideo}
+                      disabled={isExportingStripVideo}
+                      className="w-full flex items-center justify-center gap-2 font-display text-[11px] tracking-widest uppercase px-4 py-3 rounded-sm transition-all active:scale-95 disabled:opacity-50"
+                      style={{ background: 'var(--vintage-brown)', color: 'var(--cream)' }}
+                    >
+                      <DownloadSmIcon />
+                      <span>
+                        {isExportingStripVideo
+                          ? `Creating HD Live Strip (${stripVideoProgress}%)…`
+                          : liveStripVideoUrl
+                            ? `Save HD Live Strip (.${liveStripVideoExt})`
+                            : 'Save HD Live Strip Video'}
+                      </span>
+                    </button>
+                  </div>
+                )}
 
                 <div
                   className={`grid gap-3 ${

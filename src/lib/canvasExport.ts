@@ -1,4 +1,5 @@
 import {
+  FILTERS,
   FilterType,
   LayoutType,
   PhotoSession,
@@ -8,6 +9,38 @@ import {
   StripDecoration,
 } from './types'
 import { getStripTheme, StripThemeConfig } from './stripDesigns'
+
+export interface PhotoboothRenderOptions {
+  includeStickers?: boolean
+  sourceOverrides?: (CanvasImageSource | undefined)[]
+  fastCssFilter?: boolean
+  targetCanvas?: HTMLCanvasElement
+}
+
+function getSourceDimensions(img: CanvasImageSource): { nw: number; nh: number } {
+  if (typeof HTMLVideoElement !== 'undefined' && img instanceof HTMLVideoElement) {
+    return { nw: img.videoWidth, nh: img.videoHeight }
+  }
+  if (typeof HTMLCanvasElement !== 'undefined' && img instanceof HTMLCanvasElement) {
+    return { nw: img.width, nh: img.height }
+  }
+  if (typeof HTMLImageElement !== 'undefined' && img instanceof HTMLImageElement) {
+    return { nw: img.naturalWidth, nh: img.naturalHeight }
+  }
+  const anyImg = img as { width?: number; height?: number }
+  return { nw: anyImg.width ?? 0, nh: anyImg.height ?? 0 }
+}
+
+function getCssFilterString(filter: FilterType): string {
+  return FILTERS.find((f) => f.id === filter)?.cssFilter ?? 'none'
+}
+
+function setCanvasSizeIfNeeded(canvas: HTMLCanvasElement, w: number, h: number) {
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w
+    canvas.height = h
+  }
+}
 
 const S = 2 // 2× scale for high-res output
 
@@ -52,12 +85,11 @@ function createSeededRng(seed: number) {
 /** Cover-crop with optional pan/zoom transform: draw image filling (dx,dy,dw,dh) with no distortion */
 export function drawImageCover(
   ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
+  img: CanvasImageSource,
   dx: number, dy: number, dw: number, dh: number,
   transform?: PhotoTransform
 ) {
-  const nw = img.naturalWidth
-  const nh = img.naturalHeight
+  const { nw, nh } = getSourceDimensions(img)
   if (!nw || !nh || dw <= 0 || dh <= 0) return
 
   const sa = nw / nh
@@ -222,7 +254,33 @@ export function resolveEffectiveTheme(session: PhotoSession, layout: LayoutType)
   return getStripTheme('vintage_cream')
 }
 
+const themeBgCache = new Map<string, HTMLCanvasElement>()
+
 export function drawThemeBackground(ctx: CanvasRenderingContext2D, w: number, h: number, theme: StripThemeConfig) {
+  const cacheKey = `${theme.id}|${theme.pattern}|${theme.bgPrimary}|${theme.bgSecondary || ''}|${w}x${h}`
+  const cachedBg = themeBgCache.get(cacheKey)
+  if (cachedBg) {
+    ctx.drawImage(cachedBg, 0, 0, w, h)
+    return
+  }
+
+  const off = typeof document !== 'undefined' ? document.createElement('canvas') : null
+  const targetCtx = off ? (() => { off.width = w; off.height = h; return off.getContext('2d') })() : null
+  const drawCtx = targetCtx || ctx
+
+  drawThemeBackgroundUncached(drawCtx, w, h, theme)
+
+  if (off && targetCtx) {
+    if (themeBgCache.size >= 8) {
+      const oldest = themeBgCache.keys().next().value
+      if (oldest !== undefined) themeBgCache.delete(oldest)
+    }
+    themeBgCache.set(cacheKey, off)
+    ctx.drawImage(off, 0, 0, w, h)
+  }
+}
+
+function drawThemeBackgroundUncached(ctx: CanvasRenderingContext2D, w: number, h: number, theme: StripThemeConfig) {
   const rng = createSeededRng(Math.round(w * 13 + h * 7))
 
   switch (theme.pattern) {
@@ -397,13 +455,14 @@ export function drawThemeBackground(ctx: CanvasRenderingContext2D, w: number, h:
 /** Draw photo with configurable frame style and shadow */
 export function drawPhotoFramed(
   ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
+  img: CanvasImageSource,
   filter: FilterType,
   x: number, y: number, w: number, h: number,
   bw = 5 * S,
   transform?: PhotoTransform,
   borderStyle: StripBorderStyle = 'classic',
-  frameColor = '#ffffff'
+  frameColor = '#ffffff',
+  fastCssFilter = false
 ) {
   const radius = borderStyle === 'rounded' ? 8 * S : 0
 
@@ -422,6 +481,7 @@ export function drawPhotoFramed(
     ctx.restore()
   }
 
+  const useGpuFilter = fastCssFilter && filter !== 'none' && 'filter' in ctx
   ctx.save()
   if (radius > 0) {
     roundedRect(ctx, x, y, w, h, radius)
@@ -430,10 +490,15 @@ export function drawPhotoFramed(
     ctx.rect(x, y, w, h)
   }
   ctx.clip()
+  if (useGpuFilter) {
+    ctx.filter = getCssFilterString(filter)
+  }
   drawImageCover(ctx, img, x, y, w, h, transform)
   ctx.restore()
 
-  applyPixelFilter(ctx, filter, x, y, w, h)
+  if (!useGpuFilter) {
+    applyPixelFilter(ctx, filter, x, y, w, h)
+  }
 
   if (borderStyle === 'dashed') {
     ctx.save()
@@ -449,14 +514,16 @@ export function drawPhotoFramed(
 /** Draw photo without outer mat (used by classic/filmstrip, still honors rounded/dashed accents) */
 export function drawPhoto(
   ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
+  img: CanvasImageSource,
   filter: FilterType,
   x: number, y: number, w: number, h: number,
   transform?: PhotoTransform,
   borderStyle: StripBorderStyle = 'classic',
-  isDark = true
+  isDark = true,
+  fastCssFilter = false
 ) {
   const radius = borderStyle === 'rounded' ? 7 * S : 0
+  const useGpuFilter = fastCssFilter && filter !== 'none' && 'filter' in ctx
   ctx.save()
   if (radius > 0) {
     roundedRect(ctx, x, y, w, h, radius)
@@ -465,10 +532,15 @@ export function drawPhoto(
     ctx.rect(x, y, w, h)
   }
   ctx.clip()
+  if (useGpuFilter) {
+    ctx.filter = getCssFilterString(filter)
+  }
   drawImageCover(ctx, img, x, y, w, h, transform)
   ctx.restore()
 
-  applyPixelFilter(ctx, filter, x, y, w, h)
+  if (!useGpuFilter) {
+    applyPixelFilter(ctx, filter, x, y, w, h)
+  }
 
   if (borderStyle === 'dashed') {
     ctx.save()
@@ -695,14 +767,27 @@ export async function drawPlacedStickers(
 // LAYOUT GENERATORS
 // ─────────────────────────────────────────────────────────────────────────────
 
+async function resolveSources(
+  photos: string[],
+  maxCount?: number,
+  overrides?: (CanvasImageSource | undefined)[]
+): Promise<CanvasImageSource[]> {
+  const slice = typeof maxCount === 'number' ? photos.slice(0, maxCount) : photos
+  return Promise.all(
+    slice.map((src, i) => (overrides?.[i] ? Promise.resolve(overrides[i]!) : loadImage(src)))
+  )
+}
+
 // ── CLASSIC STRIP ─────────────────────────────────────────────────────────────
 async function generateClassic(
   session: PhotoSession,
   canvas: HTMLCanvasElement,
   theme: StripThemeConfig,
-  landscape = false
+  landscape = false,
+  opts?: PhotoboothRenderOptions
 ) {
-  const imgs = await Promise.all(session.photos.map(loadImage))
+  const imgs = await resolveSources(session.photos, undefined, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const n = imgs.length
   const stripPad = 14 * S
   const titleH = 28 * S
@@ -724,7 +809,7 @@ async function generateClassic(
     totalH = stripPad + titleH + n * (photoH + photoGap) - photoGap + bottomPad + captionH + stripPad
   }
 
-  canvas.width = totalW; canvas.height = totalH
+  setCanvasSizeIfNeeded(canvas, totalW, totalH)
   const ctx = canvas.getContext('2d')!
   drawThemeBackground(ctx, totalW, totalH, theme)
 
@@ -755,7 +840,7 @@ async function generateClassic(
       x = stripPad
       y = stripPad + titleH + i * (photoH + photoGap)
     }
-    drawPhoto(ctx, img, session.filter, x, y, photoW, photoH, session.photoTransforms?.[i], borderStyle, theme.isDark)
+    drawPhoto(ctx, img, session.filter, x, y, photoW, photoH, session.photoTransforms?.[i], borderStyle, theme.isDark, fast)
 
     // Thin dividers
     if (i < n - 1) {
@@ -794,9 +879,11 @@ async function generateFilmstrip(
   session: PhotoSession,
   canvas: HTMLCanvasElement,
   theme: StripThemeConfig,
-  landscape = false
+  landscape = false,
+  opts?: PhotoboothRenderOptions
 ) {
-  const imgs = await Promise.all(session.photos.map(loadImage))
+  const imgs = await resolveSources(session.photos, undefined, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const n = imgs.length
   const sprocketW = 22 * S
   const innerPad = 8 * S
@@ -820,8 +907,7 @@ async function generateFilmstrip(
     const totalW = sidePad * 2 + n * photoW + (n - 1) * photoGap
     const totalH = headerBand + trackH + (captionH > 0 ? 10 * S + captionH : 0) + bottomPad
 
-    canvas.width = totalW
-    canvas.height = totalH
+    setCanvasSizeIfNeeded(canvas, totalW, totalH)
     const ctx = canvas.getContext('2d')!
 
     drawThemeBackground(ctx, totalW, totalH, theme)
@@ -855,7 +941,7 @@ async function generateFilmstrip(
     const photoY = filmTop + sprocketW + innerPad
     imgs.forEach((img, i) => {
       const photoX = sidePad + i * (photoW + photoGap)
-      drawPhoto(ctx, img, session.filter, photoX, photoY, photoW, photoH, session.photoTransforms?.[i], borderStyle, theme.isDark)
+      drawPhoto(ctx, img, session.filter, photoX, photoY, photoW, photoH, session.photoTransforms?.[i], borderStyle, theme.isDark, fast)
       ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1
       if (borderStyle === 'rounded') {
         roundedRect(ctx, photoX, photoY, photoW, photoH, 7 * S); ctx.stroke()
@@ -880,8 +966,7 @@ async function generateFilmstrip(
     const photosBottom = topPad + titleH + n * (photoH + photoGap) - photoGap
     const totalH = photosBottom + (captionH > 0 ? 14 * S + captionH : 0) + 18 * S
 
-    canvas.width = totalW
-    canvas.height = totalH
+    setCanvasSizeIfNeeded(canvas, totalW, totalH)
     const ctx = canvas.getContext('2d')!
 
     drawThemeBackground(ctx, totalW, totalH, theme)
@@ -911,7 +996,7 @@ async function generateFilmstrip(
     const photoX = sprocketW + innerPad
     imgs.forEach((img, i) => {
       const photoY = topPad + titleH + i * (photoH + photoGap)
-      drawPhoto(ctx, img, session.filter, photoX, photoY, photoW, photoH, session.photoTransforms?.[i], borderStyle, theme.isDark)
+      drawPhoto(ctx, img, session.filter, photoX, photoY, photoW, photoH, session.photoTransforms?.[i], borderStyle, theme.isDark, fast)
       ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1
       if (borderStyle === 'rounded') {
         roundedRect(ctx, photoX, photoY, photoW, photoH, 7 * S); ctx.stroke()
@@ -937,9 +1022,11 @@ async function generateTwostrip(
   session: PhotoSession,
   canvas: HTMLCanvasElement,
   theme: StripThemeConfig,
-  landscape = false
+  landscape = false,
+  opts?: PhotoboothRenderOptions
 ) {
-  const imgs = await Promise.all(session.photos.slice(0, 2).map(loadImage))
+  const imgs = await resolveSources(session.photos, 2, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const pad = 20 * S, gap = 12 * S, bw = 5 * S
   const titleH = 26 * S
   const captionH = (session.caption ? 34 * S : 0) + (session.showDate ? 24 * S : 0)
@@ -950,14 +1037,14 @@ async function generateTwostrip(
     const totalW = pad * 2 + photoW + bw * 2
     const totalH = pad + titleH + photoH * 2 + bw * 4 + gap + captionH + pad
 
-    canvas.width = totalW; canvas.height = totalH
+    setCanvasSizeIfNeeded(canvas, totalW, totalH)
     const ctx = canvas.getContext('2d')!
     drawThemeBackground(ctx, totalW, totalH, theme)
     drawStripTitle(ctx, totalW, pad + titleH * 0.7, theme)
     imgs.forEach((img, i) => {
       const x = pad + bw
       const y = pad + titleH + bw + i * (photoH + bw * 2 + gap)
-      drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
+      drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor, fast)
     })
     drawStripBottom(ctx, session.caption, session.showDate, totalW, pad + titleH + photoH * 2 + bw * 4 + gap, theme)
   } else {
@@ -965,14 +1052,14 @@ async function generateTwostrip(
     const totalW = pad * 2 + photoW * 2 + bw * 4 + gap
     const totalH = pad + titleH + photoH + bw * 2 + captionH + pad
 
-    canvas.width = totalW; canvas.height = totalH
+    setCanvasSizeIfNeeded(canvas, totalW, totalH)
     const ctx = canvas.getContext('2d')!
     drawThemeBackground(ctx, totalW, totalH, theme)
     drawStripTitle(ctx, totalW, pad + titleH * 0.7, theme)
     imgs.forEach((img, i) => {
       const x = pad + bw + i * (photoW + bw * 2 + gap)
       const y = pad + titleH + bw
-      drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
+      drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor, fast)
     })
     drawStripBottom(ctx, session.caption, session.showDate, totalW, pad + titleH + photoH + bw * 2, theme)
   }
@@ -983,9 +1070,11 @@ async function generateThreestrip(
   session: PhotoSession,
   canvas: HTMLCanvasElement,
   theme: StripThemeConfig,
-  landscape = false
+  landscape = false,
+  opts?: PhotoboothRenderOptions
 ) {
-  const imgs = await Promise.all(session.photos.slice(0, 3).map(loadImage))
+  const imgs = await resolveSources(session.photos, 3, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const pad = 20 * S, gap = 10 * S, bw = 5 * S
   const titleH = 26 * S
   const captionH = (session.caption ? 34 * S : 0) + (session.showDate ? 24 * S : 0)
@@ -996,14 +1085,14 @@ async function generateThreestrip(
     const totalW = pad * 2 + photoW + bw * 2
     const totalH = pad + titleH + photoH * 3 + bw * 6 + gap * 2 + captionH + pad
 
-    canvas.width = totalW; canvas.height = totalH
+    setCanvasSizeIfNeeded(canvas, totalW, totalH)
     const ctx = canvas.getContext('2d')!
     drawThemeBackground(ctx, totalW, totalH, theme)
     drawStripTitle(ctx, totalW, pad + titleH * 0.7, theme)
     imgs.forEach((img, i) => {
       const x = pad + bw
       const y = pad + titleH + bw + i * (photoH + bw * 2 + gap)
-      drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
+      drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor, fast)
     })
     drawStripBottom(ctx, session.caption, session.showDate, totalW, pad + titleH + photoH * 3 + bw * 6 + gap * 2, theme)
   } else {
@@ -1011,22 +1100,23 @@ async function generateThreestrip(
     const totalW = pad * 2 + photoW * 3 + bw * 6 + gap * 2
     const totalH = pad + titleH + photoH + bw * 2 + captionH + pad
 
-    canvas.width = totalW; canvas.height = totalH
+    setCanvasSizeIfNeeded(canvas, totalW, totalH)
     const ctx = canvas.getContext('2d')!
     drawThemeBackground(ctx, totalW, totalH, theme)
     drawStripTitle(ctx, totalW, pad + titleH * 0.7, theme)
     imgs.forEach((img, i) => {
       const x = pad + bw + i * (photoW + bw * 2 + gap)
       const y = pad + titleH + bw
-      drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
+      drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor, fast)
     })
     drawStripBottom(ctx, session.caption, session.showDate, totalW, pad + titleH + photoH + bw * 2, theme)
   }
 }
 
 // ── LAYOUT H — 1 large + 2 small right column ─────────────────────────────────
-async function generateLayoutH(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
-  const imgs = await Promise.all(session.photos.slice(0, 3).map(loadImage))
+async function generateLayoutH(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig, opts?: PhotoboothRenderOptions) {
+  const imgs = await resolveSources(session.photos, 3, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const pad = 24 * S, gap = 10 * S, bw = 5 * S
   const titleH = 28 * S
   const captionH = (session.caption ? 36 * S : 0) + (session.showDate ? 28 * S : 0)
@@ -1036,14 +1126,14 @@ async function generateLayoutH(session: PhotoSession, canvas: HTMLCanvasElement,
   const totalH = pad + titleH + bigH + bw * 2 + captionH + pad
   const borderStyle = session.borderStyle ?? 'classic'
 
-  canvas.width = totalW; canvas.height = totalH
+  setCanvasSizeIfNeeded(canvas, totalW, totalH)
   const ctx = canvas.getContext('2d')!
   drawThemeBackground(ctx, totalW, totalH, theme)
   drawStripTitle(ctx, totalW, pad + titleH * 0.7, theme)
-  drawPhotoFramed(ctx, imgs[0], session.filter, pad + bw, pad + titleH + bw, bigW, bigH, bw, session.photoTransforms?.[0], borderStyle, theme.frameColor)
+  drawPhotoFramed(ctx, imgs[0], session.filter, pad + bw, pad + titleH + bw, bigW, bigH, bw, session.photoTransforms?.[0], borderStyle, theme.frameColor, fast)
   const rx = pad + bigW + bw * 2 + gap + bw
-  drawPhotoFramed(ctx, imgs[1], session.filter, rx, pad + titleH + bw, smallW, smallH, bw, session.photoTransforms?.[1], borderStyle, theme.frameColor)
-  drawPhotoFramed(ctx, imgs[2], session.filter, rx, pad + titleH + bw + smallH + gap + bw * 2, smallW, smallH, bw, session.photoTransforms?.[2], borderStyle, theme.frameColor)
+  drawPhotoFramed(ctx, imgs[1], session.filter, rx, pad + titleH + bw, smallW, smallH, bw, session.photoTransforms?.[1], borderStyle, theme.frameColor, fast)
+  drawPhotoFramed(ctx, imgs[2], session.filter, rx, pad + titleH + bw + smallH + gap + bw * 2, smallW, smallH, bw, session.photoTransforms?.[2], borderStyle, theme.frameColor, fast)
   drawStripBottom(ctx, session.caption, session.showDate, totalW, pad + titleH + bigH + bw * 2, theme)
 }
 
@@ -1052,9 +1142,11 @@ async function generateGrid4(
   session: PhotoSession,
   canvas: HTMLCanvasElement,
   theme: StripThemeConfig,
-  landscape = false
+  landscape = false,
+  opts?: PhotoboothRenderOptions
 ) {
-  const imgs = await Promise.all(session.photos.slice(0, 4).map(loadImage))
+  const imgs = await resolveSources(session.photos, 4, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const pad = 24 * S
   const bw = landscape ? 4 * S : 5 * S
   const gap = landscape ? 8 * S : 12 * S
@@ -1069,8 +1161,7 @@ async function generateGrid4(
   const totalW = pad * 2 + photoW * 2 + bw * 4 + gap
   const totalH = pad + titleH + photoH * 2 + bw * 4 + gap + captionH + pad
 
-  canvas.width = totalW
-  canvas.height = totalH
+  setCanvasSizeIfNeeded(canvas, totalW, totalH)
   const ctx = canvas.getContext('2d')!
 
   drawThemeBackground(ctx, totalW, totalH, theme)
@@ -1082,9 +1173,9 @@ async function generateGrid4(
     const x = pad + bw + col * (photoW + bw * 2 + gap)
     const y = pad + titleH + bw + row * (photoH + bw * 2 + gap)
     if (bw === 0) {
-      drawPhoto(ctx, img, session.filter, x, y, photoW, photoH, session.photoTransforms?.[i], borderStyle, theme.isDark)
+      drawPhoto(ctx, img, session.filter, x, y, photoW, photoH, session.photoTransforms?.[i], borderStyle, theme.isDark, fast)
     } else {
-      drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
+      drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor, fast)
     }
   })
 
@@ -1099,8 +1190,9 @@ async function generateGrid4(
 }
 
 // ── LAYOUT E — 1 large left + 3 stacked right ─────────────────────────────────
-async function generateLayoutE(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
-  const imgs = await Promise.all(session.photos.slice(0, 4).map(loadImage))
+async function generateLayoutE(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig, opts?: PhotoboothRenderOptions) {
+  const imgs = await resolveSources(session.photos, 4, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const pad = 24 * S, gap = 8 * S, bw = 5 * S
   const titleH = 28 * S
   const captionH = (session.caption ? 36 * S : 0) + (session.showDate ? 26 * S : 0)
@@ -1110,22 +1202,23 @@ async function generateLayoutE(session: PhotoSession, canvas: HTMLCanvasElement,
   const totalH = pad + titleH + bigH + bw * 2 + captionH + pad
   const borderStyle = session.borderStyle ?? 'classic'
 
-  canvas.width = totalW; canvas.height = totalH
+  setCanvasSizeIfNeeded(canvas, totalW, totalH)
   const ctx = canvas.getContext('2d')!
   drawThemeBackground(ctx, totalW, totalH, theme)
   drawStripTitle(ctx, totalW, pad + titleH * 0.7, theme)
-  drawPhotoFramed(ctx, imgs[0], session.filter, pad + bw, pad + titleH + bw, bigW, bigH, bw, session.photoTransforms?.[0], borderStyle, theme.frameColor)
+  drawPhotoFramed(ctx, imgs[0], session.filter, pad + bw, pad + titleH + bw, bigW, bigH, bw, session.photoTransforms?.[0], borderStyle, theme.frameColor, fast)
   const rx = pad + bigW + bw * 2 + gap + bw
   for (let i = 0; i < 3; i++) {
     const y = pad + titleH + bw + i * (smallH + gap + bw * 2)
-    drawPhotoFramed(ctx, imgs[i + 1], session.filter, rx, y, smallW, smallH, bw, session.photoTransforms?.[i + 1], borderStyle, theme.frameColor)
+    drawPhotoFramed(ctx, imgs[i + 1], session.filter, rx, y, smallW, smallH, bw, session.photoTransforms?.[i + 1], borderStyle, theme.frameColor, fast)
   }
   drawStripBottom(ctx, session.caption, session.showDate, totalW, pad + titleH + bigH + bw * 2, theme)
 }
 
 // ── LAYOUT 9 — 1 large top + 3 across bottom ──────────────────────────────────
-async function generateLayout9(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
-  const imgs = await Promise.all(session.photos.slice(0, 4).map(loadImage))
+async function generateLayout9(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig, opts?: PhotoboothRenderOptions) {
+  const imgs = await resolveSources(session.photos, 4, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const pad = 24 * S, gap = 10 * S, bw = 5 * S
   const titleH = 28 * S
   const captionH = (session.caption ? 36 * S : 0) + (session.showDate ? 26 * S : 0)
@@ -1136,15 +1229,15 @@ async function generateLayout9(session: PhotoSession, canvas: HTMLCanvasElement,
   const totalH = pad + titleH + bigH + bw * 2 + gap + smallH + bw * 2 + captionH + pad
   const borderStyle = session.borderStyle ?? 'classic'
 
-  canvas.width = totalW; canvas.height = totalH
+  setCanvasSizeIfNeeded(canvas, totalW, totalH)
   const ctx = canvas.getContext('2d')!
   drawThemeBackground(ctx, totalW, totalH, theme)
   drawStripTitle(ctx, totalW, pad + titleH * 0.7, theme)
-  drawPhotoFramed(ctx, imgs[0], session.filter, pad + bw, pad + titleH + bw, bigW, bigH, bw, session.photoTransforms?.[0], borderStyle, theme.frameColor)
+  drawPhotoFramed(ctx, imgs[0], session.filter, pad + bw, pad + titleH + bw, bigW, bigH, bw, session.photoTransforms?.[0], borderStyle, theme.frameColor, fast)
   const rowY = pad + titleH + bigH + bw * 2 + gap + bw
   for (let i = 0; i < 3; i++) {
     const x = pad + bw + i * (smallW + bw * 2 + gap)
-    drawPhotoFramed(ctx, imgs[i + 1], session.filter, x, rowY, smallW, smallH, bw, session.photoTransforms?.[i + 1], borderStyle, theme.frameColor)
+    drawPhotoFramed(ctx, imgs[i + 1], session.filter, x, rowY, smallW, smallH, bw, session.photoTransforms?.[i + 1], borderStyle, theme.frameColor, fast)
   }
   drawStripBottom(ctx, session.caption, session.showDate, totalW, pad + titleH + bigH + bw * 2 + gap + smallH + bw * 2, theme)
 }
@@ -1154,9 +1247,11 @@ async function generateLayout3(
   session: PhotoSession,
   canvas: HTMLCanvasElement,
   theme: StripThemeConfig,
-  landscape = false
+  landscape = false,
+  opts?: PhotoboothRenderOptions
 ) {
-  const imgs = await Promise.all(session.photos.slice(0, 6).map(loadImage))
+  const imgs = await resolveSources(session.photos, 6, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const pad = 24 * S, gap = 10 * S, bw = 5 * S
   const titleH = 28 * S
   const photoW = landscape ? 210 * S : 175 * S
@@ -1166,7 +1261,7 @@ async function generateLayout3(
   const totalH = pad + titleH + photoH * 2 + bw * 4 + gap + captionH + pad
   const borderStyle = session.borderStyle ?? 'classic'
 
-  canvas.width = totalW; canvas.height = totalH
+  setCanvasSizeIfNeeded(canvas, totalW, totalH)
   const ctx = canvas.getContext('2d')!
   drawThemeBackground(ctx, totalW, totalH, theme)
   drawStripTitle(ctx, totalW, pad + titleH * 0.7, theme)
@@ -1174,14 +1269,15 @@ async function generateLayout3(
     const col = i % 3, row = Math.floor(i / 3)
     const x = pad + bw + col * (photoW + bw * 2 + gap)
     const y = pad + titleH + bw + row * (photoH + bw * 2 + gap)
-    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
+    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor, fast)
   })
   drawStripBottom(ctx, session.caption, session.showDate, totalW, pad + titleH + photoH * 2 + bw * 4 + gap, theme)
 }
 
 // ── GRID 6 — 2 cols × 3 rows ──────────────────────────────────────────────────
-async function generateGrid6(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
-  const imgs = await Promise.all(session.photos.slice(0, 6).map(loadImage))
+async function generateGrid6(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig, opts?: PhotoboothRenderOptions) {
+  const imgs = await resolveSources(session.photos, 6, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const pad = 24 * S, gap = 10 * S, bw = 5 * S
   const titleH = 28 * S
   const photoW = 220 * S, photoH = 165 * S
@@ -1190,7 +1286,7 @@ async function generateGrid6(session: PhotoSession, canvas: HTMLCanvasElement, t
   const totalH = pad + titleH + photoH * 3 + bw * 6 + gap * 2 + captionH + pad
   const borderStyle = session.borderStyle ?? 'classic'
 
-  canvas.width = totalW; canvas.height = totalH
+  setCanvasSizeIfNeeded(canvas, totalW, totalH)
   const ctx = canvas.getContext('2d')!
   drawThemeBackground(ctx, totalW, totalH, theme)
   drawStripTitle(ctx, totalW, pad + titleH * 0.7, theme)
@@ -1198,14 +1294,15 @@ async function generateGrid6(session: PhotoSession, canvas: HTMLCanvasElement, t
     const col = i % 2, row = Math.floor(i / 2)
     const x = pad + bw + col * (photoW + bw * 2 + gap)
     const y = pad + titleH + bw + row * (photoH + bw * 2 + gap)
-    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
+    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor, fast)
   })
   drawStripBottom(ctx, session.caption, session.showDate, totalW, pad + titleH + photoH * 3 + bw * 6 + gap * 2, theme)
 }
 
 // ── POLAROID ──────────────────────────────────────────────────────────────────
-async function generatePolaroid(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
-  const imgs = await Promise.all(session.photos.map(loadImage))
+async function generatePolaroid(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig, opts?: PhotoboothRenderOptions) {
+  const imgs = await resolveSources(session.photos, undefined, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const n = imgs.length
   const borderStyle = session.borderStyle ?? 'classic'
 
@@ -1230,7 +1327,7 @@ async function generatePolaroid(session: PhotoSession, canvas: HTMLCanvasElement
   const totalW = pad * 2 + cols * frameW + (cols - 1) * gap + overflow * 2
   const totalH = pad + titleH + rows * frameH + (rows - 1) * gap + captionH + pad + overflow
 
-  canvas.width = totalW; canvas.height = totalH
+  setCanvasSizeIfNeeded(canvas, totalW, totalH)
   const ctx = canvas.getContext('2d')!
 
   drawThemeBackground(ctx, totalW, totalH, theme)
@@ -1291,9 +1388,15 @@ async function generatePolaroid(session: PhotoSession, canvas: HTMLCanvasElement
       oc.rect(ox + frameSide, oy + frameTop, photoW, photoH)
     }
     oc.clip()
+    const useCssFilter = fast && session.filter !== 'none' && 'filter' in oc
+    if (useCssFilter) {
+      oc.filter = getCssFilterString(session.filter)
+    }
     drawImageCover(oc, img, ox + frameSide, oy + frameTop, photoW, photoH, session.photoTransforms?.[i])
     oc.restore()
-    applyPixelFilter(oc, session.filter, ox + frameSide, oy + frameTop, photoW, photoH)
+    if (!useCssFilter) {
+      applyPixelFilter(oc, session.filter, ox + frameSide, oy + frameTop, photoW, photoH)
+    }
 
     oc.save()
     oc.strokeStyle = 'rgba(0,0,0,0.08)'; oc.lineWidth = 1
@@ -1312,8 +1415,9 @@ async function generatePolaroid(session: PhotoSession, canvas: HTMLCanvasElement
 }
 
 // ── DIAGONAL ──────────────────────────────────────────────────────────────────
-async function generateDiagonal(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
-  const imgs = await Promise.all(session.photos.map(loadImage))
+async function generateDiagonal(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig, opts?: PhotoboothRenderOptions) {
+  const imgs = await resolveSources(session.photos, undefined, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const n = imgs.length
   const photoW = 260 * S, photoH = 195 * S, bw = 5 * S
   const pad = 32 * S, titleH = 30 * S
@@ -1325,7 +1429,7 @@ async function generateDiagonal(session: PhotoSession, canvas: HTMLCanvasElement
   const totalH = bottomPhotosY + captionH + pad
   const borderStyle = session.borderStyle ?? 'classic'
 
-  canvas.width = totalW; canvas.height = totalH
+  setCanvasSizeIfNeeded(canvas, totalW, totalH)
   const ctx = canvas.getContext('2d')!
   drawThemeBackground(ctx, totalW, totalH, theme)
   drawStripTitle(ctx, totalW, pad + titleH * 0.7, theme)
@@ -1334,15 +1438,16 @@ async function generateDiagonal(session: PhotoSession, canvas: HTMLCanvasElement
     const isRight = i % 2 === 1
     const x = pad + bw + (isRight ? offset : 0)
     const y = pad + titleH + bw + i * rowH
-    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
+    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor, fast)
   })
 
   drawStripBottom(ctx, session.caption, session.showDate, totalW, bottomPhotosY, theme)
 }
 
 // ── WIDE STRIP (16:10 archival frames + index marks) ──────────────────────────
-async function generateWideStrip(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
-  const imgs = await Promise.all(session.photos.map(loadImage))
+async function generateWideStrip(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig, opts?: PhotoboothRenderOptions) {
+  const imgs = await resolveSources(session.photos, undefined, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const n = imgs.length
   const pad = 20 * S
   const bw = 4 * S
@@ -1356,7 +1461,7 @@ async function generateWideStrip(session: PhotoSession, canvas: HTMLCanvasElemen
   const totalH = pad + titleH + photosSpan + captionH + pad
   const borderStyle = session.borderStyle ?? 'classic'
 
-  canvas.width = totalW; canvas.height = totalH
+  setCanvasSizeIfNeeded(canvas, totalW, totalH)
   const ctx = canvas.getContext('2d')!
   drawThemeBackground(ctx, totalW, totalH, theme)
   drawStripTitle(ctx, totalW, pad + titleH * 0.65, theme)
@@ -1364,7 +1469,7 @@ async function generateWideStrip(session: PhotoSession, canvas: HTMLCanvasElemen
   imgs.forEach((img, i) => {
     const x = pad + bw
     const y = pad + titleH + bw + i * (photoH + bw * 2 + gap)
-    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
+    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor, fast)
     ctx.save()
     ctx.fillStyle = theme.dateColor
     ctx.font = `${7.5 * S}px 'Courier New', monospace`
@@ -1377,8 +1482,9 @@ async function generateWideStrip(session: PhotoSession, canvas: HTMLCanvasElemen
 }
 
 // ── DOUBLE CUT (Two matching classic strips side-by-side) ─────────────────────
-async function generateDoubleCut(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
-  const imgs = await Promise.all(session.photos.map(loadImage))
+async function generateDoubleCut(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig, opts?: PhotoboothRenderOptions) {
+  const imgs = await resolveSources(session.photos, undefined, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const n = imgs.length
   const outerPad = 14 * S
   const centerGap = 14 * S
@@ -1395,7 +1501,7 @@ async function generateDoubleCut(session: PhotoSession, canvas: HTMLCanvasElemen
   const totalH = outerPad + titleH + photosSpan + captionH + outerPad + 4 * S
   const borderStyle = session.borderStyle ?? 'classic'
 
-  canvas.width = totalW; canvas.height = totalH
+  setCanvasSizeIfNeeded(canvas, totalW, totalH)
   const ctx = canvas.getContext('2d')!
   drawThemeBackground(ctx, totalW, totalH, theme)
 
@@ -1426,7 +1532,7 @@ async function generateDoubleCut(session: PhotoSession, canvas: HTMLCanvasElemen
     const px = cx - photoW / 2
     imgs.forEach((img, i) => {
       const py = outerPad + titleH + bw + i * (photoH + bw * 2 + photoGap)
-      drawPhotoFramed(ctx, img, session.filter, px, py, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
+      drawPhotoFramed(ctx, img, session.filter, px, py, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor, fast)
     })
 
     let by = outerPad + titleH + photosSpan + 4 * S
@@ -1454,8 +1560,9 @@ async function generateDoubleCut(session: PhotoSession, canvas: HTMLCanvasElemen
 }
 
 // ── POSTCARD (4×6 landscape archival card with right typography panel) ────────
-async function generatePostcard(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
-  const imgs = await Promise.all(session.photos.map(loadImage))
+async function generatePostcard(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig, opts?: PhotoboothRenderOptions) {
+  const imgs = await resolveSources(session.photos, undefined, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const n = imgs.length
   const pad = 22 * S
   const gap = 9 * S
@@ -1475,7 +1582,7 @@ async function generatePostcard(session: PhotoSession, canvas: HTMLCanvasElement
   const totalW = pad * 2 + gridW + panelGap + panelW
   const totalH = pad * 2 + gridH
 
-  canvas.width = totalW; canvas.height = totalH
+  setCanvasSizeIfNeeded(canvas, totalW, totalH)
   const ctx = canvas.getContext('2d')!
   drawThemeBackground(ctx, totalW, totalH, theme)
 
@@ -1484,7 +1591,7 @@ async function generatePostcard(session: PhotoSession, canvas: HTMLCanvasElement
     const row = cols === 1 ? i : Math.floor(i / cols)
     const x = pad + bw + col * (photoW + bw * 2 + gap)
     const y = pad + bw + row * (photoH + bw * 2 + gap)
-    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
+    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor, fast)
   })
 
   // If 3 poses in 2×2 grid, turn the 4th cell into an editorial studio stamp box
@@ -1569,8 +1676,9 @@ async function generatePostcard(session: PhotoSession, canvas: HTMLCanvasElement
 }
 
 // ── OVERLAP 2 (Layered Duo: 1 large backdrop + 1 overlapping inset) ──────────
-async function generateOverlap2(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
-  const imgs = await Promise.all(session.photos.slice(0, 2).map(loadImage))
+async function generateOverlap2(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig, opts?: PhotoboothRenderOptions) {
+  const imgs = await resolveSources(session.photos, 2, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const pad = 24 * S
   const bw = 5 * S
   const titleH = 28 * S
@@ -1585,12 +1693,12 @@ async function generateOverlap2(session: PhotoSession, canvas: HTMLCanvasElement
   const totalH = pad + titleH + photosH + captionH + pad
   const borderStyle = session.borderStyle ?? 'classic'
 
-  canvas.width = totalW; canvas.height = totalH
+  setCanvasSizeIfNeeded(canvas, totalW, totalH)
   const ctx = canvas.getContext('2d')!
   drawThemeBackground(ctx, totalW, totalH, theme)
   drawStripTitle(ctx, totalW, pad + titleH * 0.7, theme)
 
-  drawPhotoFramed(ctx, imgs[0], session.filter, pad + bw, pad + titleH + bw, bigW, bigH, bw, session.photoTransforms?.[0], borderStyle, theme.frameColor)
+  drawPhotoFramed(ctx, imgs[0], session.filter, pad + bw, pad + titleH + bw, bigW, bigH, bw, session.photoTransforms?.[0], borderStyle, theme.frameColor, fast)
   drawPhotoFramed(
     ctx,
     imgs[1],
@@ -1602,14 +1710,16 @@ async function generateOverlap2(session: PhotoSession, canvas: HTMLCanvasElement
     bw + 1 * S,
     session.photoTransforms?.[1],
     borderStyle,
-    theme.frameColor
+    theme.frameColor,
+    fast
   )
   drawStripBottom(ctx, session.caption, session.showDate, totalW, pad + titleH + photosH + 4 * S, theme)
 }
 
 // ── BANNER 3 (1 wide top + 2 equal bottom) ───────────────────────────────────
-async function generateBanner3(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
-  const imgs = await Promise.all(session.photos.slice(0, 3).map(loadImage))
+async function generateBanner3(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig, opts?: PhotoboothRenderOptions) {
+  const imgs = await resolveSources(session.photos, 3, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const pad = 22 * S, gap = 10 * S, bw = 5 * S
   const titleH = 28 * S
   const bigW = 430 * S, bigH = 215 * S
@@ -1619,21 +1729,22 @@ async function generateBanner3(session: PhotoSession, canvas: HTMLCanvasElement,
   const totalH = pad + titleH + bigH + bw * 2 + gap + smallH + bw * 2 + captionH + pad
   const borderStyle = session.borderStyle ?? 'classic'
 
-  canvas.width = totalW; canvas.height = totalH
+  setCanvasSizeIfNeeded(canvas, totalW, totalH)
   const ctx = canvas.getContext('2d')!
   drawThemeBackground(ctx, totalW, totalH, theme)
   drawStripTitle(ctx, totalW, pad + titleH * 0.7, theme)
 
-  drawPhotoFramed(ctx, imgs[0], session.filter, pad + bw, pad + titleH + bw, bigW, bigH, bw, session.photoTransforms?.[0], borderStyle, theme.frameColor)
+  drawPhotoFramed(ctx, imgs[0], session.filter, pad + bw, pad + titleH + bw, bigW, bigH, bw, session.photoTransforms?.[0], borderStyle, theme.frameColor, fast)
   const rowY = pad + titleH + bigH + bw * 2 + gap + bw
-  drawPhotoFramed(ctx, imgs[1], session.filter, pad + bw, rowY, smallW, smallH, bw, session.photoTransforms?.[1], borderStyle, theme.frameColor)
-  drawPhotoFramed(ctx, imgs[2], session.filter, pad + bw + smallW + bw * 2 + gap, rowY, smallW, smallH, bw, session.photoTransforms?.[2], borderStyle, theme.frameColor)
+  drawPhotoFramed(ctx, imgs[1], session.filter, pad + bw, rowY, smallW, smallH, bw, session.photoTransforms?.[1], borderStyle, theme.frameColor, fast)
+  drawPhotoFramed(ctx, imgs[2], session.filter, pad + bw + smallW + bw * 2 + gap, rowY, smallW, smallH, bw, session.photoTransforms?.[2], borderStyle, theme.frameColor, fast)
   drawStripBottom(ctx, session.caption, session.showDate, totalW, rowY + smallH + bw, theme)
 }
 
 // ── TRIPTYCH 3 (3 tall vertical gallery windows side-by-side) ────────────────
-async function generateTriptych3(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
-  const imgs = await Promise.all(session.photos.slice(0, 3).map(loadImage))
+async function generateTriptych3(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig, opts?: PhotoboothRenderOptions) {
+  const imgs = await resolveSources(session.photos, 3, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const pad = 26 * S, gap = 14 * S, bw = 5 * S
   const titleH = 28 * S
   const photoW = 156 * S, photoH = 260 * S
@@ -1642,7 +1753,7 @@ async function generateTriptych3(session: PhotoSession, canvas: HTMLCanvasElemen
   const totalH = pad + titleH + photoH + bw * 2 + captionH + pad
   const borderStyle = session.borderStyle ?? 'classic'
 
-  canvas.width = totalW; canvas.height = totalH
+  setCanvasSizeIfNeeded(canvas, totalW, totalH)
   const ctx = canvas.getContext('2d')!
   drawThemeBackground(ctx, totalW, totalH, theme)
   drawStripTitle(ctx, totalW, pad + titleH * 0.7, theme)
@@ -1650,14 +1761,15 @@ async function generateTriptych3(session: PhotoSession, canvas: HTMLCanvasElemen
   imgs.forEach((img, i) => {
     const x = pad + bw + i * (photoW + bw * 2 + gap)
     const y = pad + titleH + bw
-    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
+    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor, fast)
   })
   drawStripBottom(ctx, session.caption, session.showDate, totalW, pad + titleH + photoH + bw * 2, theme)
 }
 
 // ── BENTO 4 (Asymmetric 2×2 Mosaic) ──────────────────────────────────────────
-async function generateBento4(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
-  const imgs = await Promise.all(session.photos.slice(0, 4).map(loadImage))
+async function generateBento4(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig, opts?: PhotoboothRenderOptions) {
+  const imgs = await resolveSources(session.photos, 4, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const pad = 22 * S, gap = 10 * S, bw = 5 * S
   const titleH = 28 * S
   const wideW = 280 * S, narrowW = 160 * S, rowH = 180 * S
@@ -1666,7 +1778,7 @@ async function generateBento4(session: PhotoSession, canvas: HTMLCanvasElement, 
   const totalH = pad + titleH + rowH * 2 + bw * 4 + gap + captionH + pad
   const borderStyle = session.borderStyle ?? 'classic'
 
-  canvas.width = totalW; canvas.height = totalH
+  setCanvasSizeIfNeeded(canvas, totalW, totalH)
   const ctx = canvas.getContext('2d')!
   drawThemeBackground(ctx, totalW, totalH, theme)
   drawStripTitle(ctx, totalW, pad + titleH * 0.7, theme)
@@ -1675,17 +1787,18 @@ async function generateBento4(session: PhotoSession, canvas: HTMLCanvasElement, 
   const y2 = y1 + rowH + bw * 2 + gap
   const x0 = pad + bw
 
-  drawPhotoFramed(ctx, imgs[0], session.filter, x0, y1, wideW, rowH, bw, session.photoTransforms?.[0], borderStyle, theme.frameColor)
-  drawPhotoFramed(ctx, imgs[1], session.filter, x0 + wideW + bw * 2 + gap, y1, narrowW, rowH, bw, session.photoTransforms?.[1], borderStyle, theme.frameColor)
-  drawPhotoFramed(ctx, imgs[2], session.filter, x0, y2, narrowW, rowH, bw, session.photoTransforms?.[2], borderStyle, theme.frameColor)
-  drawPhotoFramed(ctx, imgs[3], session.filter, x0 + narrowW + bw * 2 + gap, y2, wideW, rowH, bw, session.photoTransforms?.[3], borderStyle, theme.frameColor)
+  drawPhotoFramed(ctx, imgs[0], session.filter, x0, y1, wideW, rowH, bw, session.photoTransforms?.[0], borderStyle, theme.frameColor, fast)
+  drawPhotoFramed(ctx, imgs[1], session.filter, x0 + wideW + bw * 2 + gap, y1, narrowW, rowH, bw, session.photoTransforms?.[1], borderStyle, theme.frameColor, fast)
+  drawPhotoFramed(ctx, imgs[2], session.filter, x0, y2, narrowW, rowH, bw, session.photoTransforms?.[2], borderStyle, theme.frameColor, fast)
+  drawPhotoFramed(ctx, imgs[3], session.filter, x0 + narrowW + bw * 2 + gap, y2, wideW, rowH, bw, session.photoTransforms?.[3], borderStyle, theme.frameColor, fast)
 
   drawStripBottom(ctx, session.caption, session.showDate, totalW, pad + titleH + rowH * 2 + bw * 4 + gap, theme)
 }
 
 // ── BOOKMARK 4 (Slim tall Life4Cuts portrait strip) ───────────────────────────
-async function generateBookmark4(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
-  const imgs = await Promise.all(session.photos.slice(0, 4).map(loadImage))
+async function generateBookmark4(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig, opts?: PhotoboothRenderOptions) {
+  const imgs = await resolveSources(session.photos, 4, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const padX = 22 * S, padY = 26 * S, gap = 10 * S, bw = 4 * S
   const titleH = 34 * S
   const photoW = 160 * S, photoH = 192 * S
@@ -1695,7 +1808,7 @@ async function generateBookmark4(session: PhotoSession, canvas: HTMLCanvasElemen
   const totalH = padY + titleH + photosH + captionH + padY
   const borderStyle = session.borderStyle ?? 'classic'
 
-  canvas.width = totalW; canvas.height = totalH
+  setCanvasSizeIfNeeded(canvas, totalW, totalH)
   const ctx = canvas.getContext('2d')!
   drawThemeBackground(ctx, totalW, totalH, theme)
   drawStripTitle(ctx, totalW, padY + titleH * 0.58, theme)
@@ -1703,15 +1816,16 @@ async function generateBookmark4(session: PhotoSession, canvas: HTMLCanvasElemen
   imgs.forEach((img, i) => {
     const x = padX + bw
     const y = padY + titleH + bw + i * (photoH + bw * 2 + gap)
-    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
+    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor, fast)
   })
 
   drawStripBottom(ctx, session.caption, session.showDate, totalW, padY + titleH + photosH + 6 * S, theme)
 }
 
 // ── COLLAGE 6 (1 large hero + 5 highlight frames) ────────────────────────────
-async function generateCollage6(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
-  const imgs = await Promise.all(session.photos.slice(0, 6).map(loadImage))
+async function generateCollage6(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig, opts?: PhotoboothRenderOptions) {
+  const imgs = await resolveSources(session.photos, 6, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const pad = 22 * S, gap = 10 * S, bw = 5 * S
   const titleH = 28 * S
   const bigW = 290 * S, bigH = 250 * S
@@ -1726,31 +1840,32 @@ async function generateCollage6(session: PhotoSession, canvas: HTMLCanvasElement
   const totalH = pad + titleH + bigH + bw * 2 + gap + smallBotH + bw * 2 + captionH + pad
   const borderStyle = session.borderStyle ?? 'classic'
 
-  canvas.width = totalW; canvas.height = totalH
+  setCanvasSizeIfNeeded(canvas, totalW, totalH)
   const ctx = canvas.getContext('2d')!
   drawThemeBackground(ctx, totalW, totalH, theme)
   drawStripTitle(ctx, totalW, pad + titleH * 0.7, theme)
 
   const x0 = pad + bw
   const y0 = pad + titleH + bw
-  drawPhotoFramed(ctx, imgs[0], session.filter, x0, y0, bigW, bigH, bw, session.photoTransforms?.[0], borderStyle, theme.frameColor)
+  drawPhotoFramed(ctx, imgs[0], session.filter, x0, y0, bigW, bigH, bw, session.photoTransforms?.[0], borderStyle, theme.frameColor, fast)
 
   const rx = x0 + bigW + bw * 2 + gap
-  drawPhotoFramed(ctx, imgs[1], session.filter, rx, y0, smallRightW, smallRightH, bw, session.photoTransforms?.[1], borderStyle, theme.frameColor)
-  drawPhotoFramed(ctx, imgs[2], session.filter, rx, y0 + smallRightH + bw * 2 + gap, smallRightW, smallRightH, bw, session.photoTransforms?.[2], borderStyle, theme.frameColor)
+  drawPhotoFramed(ctx, imgs[1], session.filter, rx, y0, smallRightW, smallRightH, bw, session.photoTransforms?.[1], borderStyle, theme.frameColor, fast)
+  drawPhotoFramed(ctx, imgs[2], session.filter, rx, y0 + smallRightH + bw * 2 + gap, smallRightW, smallRightH, bw, session.photoTransforms?.[2], borderStyle, theme.frameColor, fast)
 
   const botY = y0 + bigH + bw * 2 + gap
   for (let i = 0; i < 3; i++) {
     const bx = x0 + i * (smallBotW + bw * 2 + gap)
-    drawPhotoFramed(ctx, imgs[3 + i], session.filter, bx, botY, smallBotW, smallBotH, bw, session.photoTransforms?.[3 + i], borderStyle, theme.frameColor)
+    drawPhotoFramed(ctx, imgs[3 + i], session.filter, bx, botY, smallBotW, smallBotH, bw, session.photoTransforms?.[3 + i], borderStyle, theme.frameColor, fast)
   }
 
   drawStripBottom(ctx, session.caption, session.showDate, totalW, botY + smallBotH + bw + 4 * S, theme)
 }
 
 // ── CONTACT 6 (Darkroom proof contact sheet with frame codes) ────────────────
-async function generateContact6(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig) {
-  const imgs = await Promise.all(session.photos.slice(0, 6).map(loadImage))
+async function generateContact6(session: PhotoSession, canvas: HTMLCanvasElement, theme: StripThemeConfig, opts?: PhotoboothRenderOptions) {
+  const imgs = await resolveSources(session.photos, 6, opts?.sourceOverrides)
+  const fast = Boolean(opts?.fastCssFilter)
   const pad = 24 * S, gap = 14 * S, rowExtra = 18 * S, bw = 4 * S
   const titleH = 30 * S
   const photoW = 196 * S, photoH = 147 * S
@@ -1759,7 +1874,7 @@ async function generateContact6(session: PhotoSession, canvas: HTMLCanvasElement
   const totalH = pad + titleH + photoH * 2 + bw * 4 + gap + rowExtra * 2 + captionH + pad
   const borderStyle = session.borderStyle ?? 'classic'
 
-  canvas.width = totalW; canvas.height = totalH
+  setCanvasSizeIfNeeded(canvas, totalW, totalH)
   const ctx = canvas.getContext('2d')!
   drawThemeBackground(ctx, totalW, totalH, theme)
   drawStripTitle(ctx, totalW, pad + titleH * 0.65, theme)
@@ -1769,7 +1884,7 @@ async function generateContact6(session: PhotoSession, canvas: HTMLCanvasElement
     const row = Math.floor(i / 3)
     const x = pad + bw + col * (photoW + bw * 2 + gap)
     const y = pad + titleH + bw + row * (photoH + bw * 2 + gap + rowExtra)
-    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor)
+    drawPhotoFramed(ctx, img, session.filter, x, y, photoW, photoH, bw, session.photoTransforms?.[i], borderStyle, theme.frameColor, fast)
 
     ctx.save()
     ctx.fillStyle = theme.dateColor
@@ -1791,46 +1906,46 @@ async function generateContact6(session: PhotoSession, canvas: HTMLCanvasElement
 export async function generatePhotoboothCanvas(
   session: PhotoSession,
   layoutOverride?: LayoutType,
-  options?: { includeStickers?: boolean }
+  options?: PhotoboothRenderOptions
 ): Promise<HTMLCanvasElement> {
-  const canvas = document.createElement('canvas')
+  const canvas = options?.targetCanvas ?? document.createElement('canvas')
   const layout = layoutOverride ?? session.layout
   const theme = resolveEffectiveTheme(session, layout)
 
   switch (layout) {
-    case 'classic':           await generateClassic(session, canvas, theme, false); break
-    case 'classic_land':      await generateClassic(session, canvas, theme, true); break
-    case 'wide_strip':        await generateWideStrip(session, canvas, theme); break
-    case 'double_cut':        await generateDoubleCut(session, canvas, theme); break
-    case 'postcard':          await generatePostcard(session, canvas, theme); break
-    case 'filmstrip':         await generateFilmstrip(session, canvas, theme, false); break
-    case 'filmstrip_land':    await generateFilmstrip(session, canvas, theme, true); break
-    case 'twostrip':          await generateTwostrip(session, canvas, theme, false); break
-    case 'twostrip_land':     await generateTwostrip(session, canvas, theme, true); break
-    case 'overlap_2':         await generateOverlap2(session, canvas, theme); break
-    case 'threestrip':        await generateThreestrip(session, canvas, theme, false); break
-    case 'threestrip_land':   await generateThreestrip(session, canvas, theme, true); break
-    case 'layout_h':          await generateLayoutH(session, canvas, theme); break
-    case 'banner_3':          await generateBanner3(session, canvas, theme); break
-    case 'triptych_3':        await generateTriptych3(session, canvas, theme); break
-    case 'grid_4':            await generateGrid4(session, canvas, theme, false); break
-    case 'grid_4_land':       await generateGrid4(session, canvas, theme, true); break
-    case 'bento_4':           await generateBento4(session, canvas, theme); break
-    case 'bookmark_4':        await generateBookmark4(session, canvas, theme); break
-    case 'layout_e':          await generateLayoutE(session, canvas, theme); break
-    case 'layout_9':          await generateLayout9(session, canvas, theme); break
-    case 'layout_3':          await generateLayout3(session, canvas, theme, false); break
-    case 'layout_3_land':     await generateLayout3(session, canvas, theme, true); break
-    case 'grid_6':            await generateGrid6(session, canvas, theme); break
-    case 'collage_6':         await generateCollage6(session, canvas, theme); break
-    case 'contact_6':         await generateContact6(session, canvas, theme); break
+    case 'classic':           await generateClassic(session, canvas, theme, false, options); break
+    case 'classic_land':      await generateClassic(session, canvas, theme, true, options); break
+    case 'wide_strip':        await generateWideStrip(session, canvas, theme, options); break
+    case 'double_cut':        await generateDoubleCut(session, canvas, theme, options); break
+    case 'postcard':          await generatePostcard(session, canvas, theme, options); break
+    case 'filmstrip':         await generateFilmstrip(session, canvas, theme, false, options); break
+    case 'filmstrip_land':    await generateFilmstrip(session, canvas, theme, true, options); break
+    case 'twostrip':          await generateTwostrip(session, canvas, theme, false, options); break
+    case 'twostrip_land':     await generateTwostrip(session, canvas, theme, true, options); break
+    case 'overlap_2':         await generateOverlap2(session, canvas, theme, options); break
+    case 'threestrip':        await generateThreestrip(session, canvas, theme, false, options); break
+    case 'threestrip_land':   await generateThreestrip(session, canvas, theme, true, options); break
+    case 'layout_h':          await generateLayoutH(session, canvas, theme, options); break
+    case 'banner_3':          await generateBanner3(session, canvas, theme, options); break
+    case 'triptych_3':        await generateTriptych3(session, canvas, theme, options); break
+    case 'grid_4':            await generateGrid4(session, canvas, theme, false, options); break
+    case 'grid_4_land':       await generateGrid4(session, canvas, theme, true, options); break
+    case 'bento_4':           await generateBento4(session, canvas, theme, options); break
+    case 'bookmark_4':        await generateBookmark4(session, canvas, theme, options); break
+    case 'layout_e':          await generateLayoutE(session, canvas, theme, options); break
+    case 'layout_9':          await generateLayout9(session, canvas, theme, options); break
+    case 'layout_3':          await generateLayout3(session, canvas, theme, false, options); break
+    case 'layout_3_land':     await generateLayout3(session, canvas, theme, true, options); break
+    case 'grid_6':            await generateGrid6(session, canvas, theme, options); break
+    case 'collage_6':         await generateCollage6(session, canvas, theme, options); break
+    case 'contact_6':         await generateContact6(session, canvas, theme, options); break
     case 'polaroid_2':
     case 'polaroid_3':
-    case 'polaroid_4':        await generatePolaroid(session, canvas, theme); break
+    case 'polaroid_4':        await generatePolaroid(session, canvas, theme, options); break
     case 'diagonal_2':
     case 'diagonal_3':
-    case 'diagonal_4':        await generateDiagonal(session, canvas, theme); break
-    default:                  await generateClassic(session, canvas, theme, false); break
+    case 'diagonal_4':        await generateDiagonal(session, canvas, theme, options); break
+    default:                  await generateClassic(session, canvas, theme, false, options); break
   }
 
   const ctx = canvas.getContext('2d')!

@@ -140,7 +140,7 @@ export async function generateLiveStripGif(
 
   // Include the crisp final still pose as the last frame so it holds cleanly at the end
   const totalSteps = maxFrames + 1
-  const maxDim = 420 // Mobile-friendly file size & fast client-side encoding
+  const maxDim = 640 // Sharp Live Strip GIF quality while keeping encoding fast
 
   const gif = GIFEncoder()
   const scaleCanvas = document.createElement('canvas')
