@@ -245,7 +245,6 @@ export default function CameraBooth({
   const [isRecordingActive, setIsRecordingActive] = useState(false)
   const [currentShot, setCurrentShot] = useState(0)
   const [countdown, setCountdown] = useState(0)
-  const [isCapturingPostLive, setIsCapturingPostLive] = useState(false)
   const [isFlashing, setIsFlashing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [cameraReady, setCameraReady] = useState(false)
@@ -379,7 +378,6 @@ export default function CameraBooth({
     if (isRunningRef.current || !cameraReady) return
     isRunningRef.current = true
     setPhase('running')
-    setIsCapturingPostLive(false)
     setShowVideoPreview(false)
 
     if (sessionVideo?.videoUrl) {
@@ -387,41 +385,18 @@ export default function CameraBooth({
       setSessionVideo(undefined)
     }
 
-    const LIVE_INTERVAL_MS = 150
-    const LIVE_PRE_COUNT = 10 // 10 * 150ms = 1.5s before shutter
-    const LIVE_POST_COUNT = 10 // 10 * 150ms = 1.5s after shutter
-
     const shots: string[] = []
     const liveBursts: string[][] = []
-    const poseShutterOffsetsMs: number[] = []
     const burstCanvas = document.createElement('canvas')
 
     // Optional MediaRecorder + live timer setup (never blocks photo capture)
     let recordingWarning: string | undefined
     let chosenFormat: { mimeType: string; ext: 'mp4' | 'webm' } | null = null
-    let hasCapturedAudio = false
     const recordedChunks: Blob[] = []
     let recorderStoppedPromise: Promise<Blob | null> | null = null
-    let recStartedAt = Date.now()
+    const recStartedAt = Date.now()
 
     if (liveCaptureEnabled && streamRef.current) {
-      let audioTrack: MediaStreamTrack | null = null
-      if (includeAudio && navigator.mediaDevices?.getUserMedia) {
-        try {
-          const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-          if (isMountedRef.current) {
-            micStreamRef.current = micStream
-            audioTrack = micStream.getAudioTracks()[0] ?? null
-            hasCapturedAudio = Boolean(audioTrack)
-          } else {
-            micStream.getTracks().forEach((t) => t.stop())
-          }
-        } catch {
-          recordingWarning = 'Microphone permission unavailable — captured silent 3s Live Photo.'
-        }
-      }
-
-      recStartedAt = Date.now()
       setRecElapsedSec(0)
       setIsRecordingActive(true)
       recTimerRef.current = window.setInterval(() => {
@@ -430,11 +405,26 @@ export default function CameraBooth({
         }
       }, 400)
 
+      let audioTrack: MediaStreamTrack | null = null
+      if (includeAudio && navigator.mediaDevices?.getUserMedia) {
+        try {
+          const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+          if (isMountedRef.current) {
+            micStreamRef.current = micStream
+            audioTrack = micStream.getAudioTracks()[0] ?? null
+          } else {
+            micStream.getTracks().forEach((t) => t.stop())
+          }
+        } catch {
+          recordingWarning = 'Microphone permission unavailable — recorded video without audio.'
+        }
+      }
+
       chosenFormat = selectSupportedVideoMimeType(Boolean(audioTrack))
       if (!chosenFormat) {
         recordingWarning =
           recordingWarning ??
-          'Video clip recording is unsupported in this browser, but 3s Live GIF strip was captured.'
+          'Video clip recording is unsupported in this browser, but Live GIF strip was captured.'
       } else {
         try {
           const videoEl = videoRef.current
@@ -475,18 +465,11 @@ export default function CameraBooth({
             recordStream = new MediaStream(tracks)
           }
 
-          let recorder: MediaRecorder
-          try {
-            const options: MediaRecorderOptions = {
-              videoBitsPerSecond: 1_500_000,
-              ...(chosenFormat.mimeType ? { mimeType: chosenFormat.mimeType } : {}),
-            }
-            recorder = new MediaRecorder(recordStream, options)
-          } catch {
-            // Fallback without explicit mimeType if container + audio codec mismatched
-            recorder = new MediaRecorder(recordStream)
-            chosenFormat = { mimeType: recorder.mimeType || 'video/webm', ext: 'webm' }
+          const options: MediaRecorderOptions = {
+            videoBitsPerSecond: 1_500_000,
+            ...(chosenFormat.mimeType ? { mimeType: chosenFormat.mimeType } : {}),
           }
+          const recorder = new MediaRecorder(recordStream, options)
           mediaRecorderRef.current = recorder
 
           recorder.ondataavailable = (ev) => {
@@ -505,11 +488,11 @@ export default function CameraBooth({
             recorder.onerror = () => resolve(null)
           })
 
-          recorder.start(250)
+          recorder.start(500)
         } catch {
           recordingWarning =
             recordingWarning ??
-            'Could not start video recorder on this device, but 3s Live GIF strip was captured.'
+            'Could not start video recorder on this device, but Live GIF strip was captured.'
           recorderStoppedPromise = null
         }
       }
@@ -518,20 +501,19 @@ export default function CameraBooth({
     for (let shot = 0; shot < poseCount; shot++) {
       if (!isMountedRef.current) break
       setCurrentShot(shot)
-      setIsCapturingPostLive(false)
 
-      // Rolling ring buffer holding the final 1.5s of live motion leading into each shutter
-      const preBurst: string[] = []
+      // Ring buffer holding the final ~1.25s of live motion leading into each pose
+      const shotBurst: string[] = []
       if (liveCaptureEnabled) {
         const firstSample = captureBurstFrame(burstCanvas)
-        if (firstSample) preBurst.push(firstSample)
+        if (firstSample) shotBurst.push(firstSample)
         burstIntervalRef.current = window.setInterval(() => {
           const frame = captureBurstFrame(burstCanvas)
           if (frame) {
-            preBurst.push(frame)
-            if (preBurst.length > LIVE_PRE_COUNT) preBurst.shift()
+            shotBurst.push(frame)
+            if (shotBurst.length > 10) shotBurst.shift()
           }
-        }, LIVE_INTERVAL_MS)
+        }, 125)
       }
 
       for (let t = countdownSeconds; t > 0; t--) {
@@ -548,54 +530,21 @@ export default function CameraBooth({
       if (!isMountedRef.current) break
       setCountdown(0)
       setIsFlashing(true)
-      const shutterOffsetMs = Date.now() - recStartedAt
-      poseShutterOffsetsMs.push(shutterOffsetMs)
-
       const photo = captureFrame()
-      const shutterBurstFrame = liveCaptureEnabled ? captureBurstFrame(burstCanvas) : null
       await new Promise((r) => setTimeout(r, 300))
       if (!isMountedRef.current) break
       setIsFlashing(false)
-
-      // Capture 1.5s of post-shutter Live Photo motion & audio
-      const postBurst: string[] = []
-      if (liveCaptureEnabled && isMountedRef.current) {
-        setIsCapturingPostLive(true)
-        for (let p = 0; p < LIVE_POST_COUNT; p++) {
-          if (!isMountedRef.current) break
-          const frame = captureBurstFrame(burstCanvas)
-          if (frame) postBurst.push(frame)
-          if (p < LIVE_POST_COUNT - 1) {
-            await new Promise((r) => setTimeout(r, LIVE_INTERVAL_MS))
-          }
-        }
-        setIsCapturingPostLive(false)
-      }
-
       if (photo) {
         shots.push(photo)
         if (liveCaptureEnabled) {
-          // Ensure preBurst has consistent length before shutter
-          const paddedPre =
-            preBurst.length > 0
-              ? preBurst
-              : shutterBurstFrame
-                ? [shutterBurstFrame]
-                : []
-          const fullBurst = [
-            ...paddedPre,
-            ...(shutterBurstFrame ? [shutterBurstFrame] : []),
-            ...postBurst,
-          ]
-          liveBursts.push(fullBurst)
+          liveBursts.push([...shotBurst])
         }
         setCapturedPhotos([...shots])
       }
-      if (shot < poseCount - 1) await new Promise((r) => setTimeout(r, 500))
+      if (shot < poseCount - 1) await new Promise((r) => setTimeout(r, 600))
     }
 
     isRunningRef.current = false
-    setIsCapturingPostLive(false)
     const totalSec = Math.max(1, Math.round((Date.now() - recStartedAt) / 1000))
 
     // Stop MediaRecorder cleanly
@@ -618,15 +567,13 @@ export default function CameraBooth({
     micStreamRef.current = null
     setIsRecordingActive(false)
 
-    let videoBlob: Blob | undefined
     let videoUrl: string | undefined
     if (recorderStoppedPromise) {
       const blob = await Promise.race([
         recorderStoppedPromise,
-        new Promise<null>((r) => setTimeout(() => r(null), 1200)),
+        new Promise<null>((r) => setTimeout(() => r(null), 900)),
       ])
       if (blob && blob.size > 0 && isMountedRef.current) {
-        videoBlob = blob
         videoUrl = URL.createObjectURL(blob)
       }
     }
@@ -635,14 +582,10 @@ export default function CameraBooth({
       if (liveCaptureEnabled) {
         setSessionVideo({
           liveFramesPerPose: liveBursts,
-          shutterFrameIndex: LIVE_PRE_COUNT,
-          videoBlob,
           videoUrl,
           videoMimeType: chosenFormat?.mimeType || 'video/webm',
           videoExt: chosenFormat?.ext || 'webm',
           durationSec: totalSec,
-          poseShutterOffsetsMs,
-          hasAudio: hasCapturedAudio,
           warning: recordingWarning,
         })
       } else {
@@ -783,20 +726,7 @@ export default function CameraBooth({
           {/* Ready hint */}
           {cameraReady && phase === 'ready' && (
             <div className="absolute top-3 left-1/2 -translate-x-1/2 max-w-[92%] px-3 py-1.5 sm:px-4 sm:py-2 rounded-sm text-[10px] sm:text-xs font-display tracking-widest uppercase whitespace-nowrap truncate" style={{ background: 'rgba(26,20,16,0.72)', color: 'rgba(245,240,232,0.92)' }}>
-              Ready · {poseCount} shots · {countdownSeconds}s{liveCaptureEnabled ? ' · iOS Live Photo (3s)' : ''}
-            </div>
-          )}
-
-          {/* Post-shutter 1.5s Live Photo motion indicator */}
-          {phase === 'running' && isCapturingPostLive && (
-            <div
-              className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3.5 py-1.5 rounded-sm flex items-center gap-2 pointer-events-none animate-fade-in"
-              style={{ background: 'rgba(26,20,16,0.85)', border: '1px solid rgba(255,215,120,0.45)', color: '#fef3c7' }}
-            >
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" aria-hidden="true" />
-              <span className="font-display text-[10px] sm:text-xs tracking-widest uppercase whitespace-nowrap">
-                Live Photo · Hold Pose (+1.5s)
-              </span>
+              Ready · {poseCount} shots · {countdownSeconds}s{liveCaptureEnabled ? ' · Live' : ''}
             </div>
           )}
 
@@ -962,10 +892,10 @@ export default function CameraBooth({
                 <VideoIcon />
               </span>
               <span className="font-display text-[11px] tracking-wider uppercase" style={{ color: 'var(--text-secondary)' }}>
-                iOS Live Photo (3s)
+                Live Motion &amp; Video
               </span>
               <span className="hidden sm:inline font-body text-xs" style={{ color: 'var(--text-muted)' }}>
-                · 1.5s before &amp; after shutter + audio &amp; GIF
+                · Captures iOS Live GIF + session clip
               </span>
             </div>
 
@@ -1069,11 +999,7 @@ export default function CameraBooth({
                 }} />
             ))}
             <span className="ml-2 font-display text-xs tracking-widest uppercase" style={{ color: 'var(--text-muted)' }}>
-              {countdown > 0
-                ? `Shooting in ${countdown}…`
-                : isCapturingPostLive
-                  ? 'Capturing +1.5s Live Photo…'
-                  : 'Hold still!'}
+              {countdown > 0 ? `Shooting in ${countdown}…` : 'Hold still!'}
             </span>
           </div>
         )}

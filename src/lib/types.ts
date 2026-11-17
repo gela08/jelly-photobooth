@@ -134,12 +134,8 @@ export type StripDecoration = 'none' | 'stars' | 'hearts' | 'corners' | 'sparkle
 // ── Live Motion & Video Session ───────────────────────────────────────────
 
 export interface SessionVideoData {
-  /** Per-pose captured burst frames (mirrored JPEG data URLs) spanning 1.5s before + still + 1.5s after */
+  /** Per-pose captured burst frames (mirrored JPEG data URLs) leading into each shot */
   liveFramesPerPose: string[][]
-  /** Index within each pose's liveFramesPerPose array where the shutter still occurs */
-  shutterFrameIndex?: number
-  /** Recorded full-session MediaRecorder Blob (used to slice ±1.5s Live Photo audio) */
-  videoBlob?: Blob
   /** Recorded full-session MediaRecorder clip Blob URL (if supported) */
   videoUrl?: string
   /** Negotiated video MIME type (e.g. video/mp4 or video/webm) */
@@ -148,10 +144,6 @@ export interface SessionVideoData {
   videoExt?: 'mp4' | 'webm'
   /** Elapsed recording duration in seconds */
   durationSec?: number
-  /** Exact offset in ms from recording start when each pose shutter fired */
-  poseShutterOffsetsMs?: number[]
-  /** Whether microphone audio was captured into the recording */
-  hasAudio?: boolean
   /** Non-fatal notice (e.g. mic denied or video codec unsupported) */
   warning?: string
 }
@@ -172,7 +164,6 @@ export interface PhotoSession {
   borderStyle?: StripBorderStyle
   stripDecoration?: StripDecoration
   liveFramesPerPose?: string[][]
-  liveShutterFrameIndex?: number
 }
 
 // ── Setup options ─────────────────────────────────────────────────────────

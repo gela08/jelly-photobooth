@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000 -H 0.0.0.0",
+    "dev": "node server.ts",
     "build": "next build",
-    "start": "next start -p 3000 -H 0.0.0.0",
-    "lint": "tsc --noEmit"
+    "start": "node server.ts",
+    "lint": "next lint"
   },
   "dependencies": {
     "@types/ws": "^8.18.2",
